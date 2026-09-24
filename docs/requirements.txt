@@ -1,0 +1,2 @@
+# Documentation dependencies installed into Read the Docs' build virtual environment.
+mkdocs-material>=9.0
