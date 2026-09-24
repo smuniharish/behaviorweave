@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "behaviorweave"
+version = "0.1.0"
+description = "Behavioral policy and intervention framework for LangGraph and LangChain agents."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "S Muni Harish" }]
+keywords = ["langgraph", "langchain", "agents", "behavior", "policy", "intervention"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.12",
+  "Typing :: Typed",
+]
+dependencies = [
+  "langchain>=1.0",
+  "langgraph>=1.0",
+  "langgraph-xai>=0.1.0",
+]
+
+[project.optional-dependencies]
+examples = ["langgraph-swarm", "deepagents"]
+mcp = ["langchain[mcp]>=1.4"]
+real-model = ["langchain-openai>=1.0"]
+dev = [
+  "black>=25.0",
+  "hypothesis>=6.0",
+  "langchain[mcp]>=1.4",
+  "mkdocs-material>=9.0",
+  "mkdocs>=1.6",
+  "pyrefly>=0.18",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/behaviorweave"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.pyrefly]
+project-includes = [
+    "src/**/*.py",
+    "tests/**/*.py",
+]

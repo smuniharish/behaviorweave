@@ -1,0 +1,39 @@
+site_name: BehaviorWeave
+site_description: Behavioral policy and intervention framework for graph agents
+site_author: Muni Harish
+exclude_docs: |
+  PROJECT_STRUCTURE.md
+  VALIDATION_REPORT.md
+  PRODUCTION_READINESS.md
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Get started: quickstart.md
+  - API reference: api-reference.md
+  - Live examples: live-examples.md
+  - Patterns: patterns.md
+  - Policies: policies.md
+  - Concurrency: concurrency.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Responsibility matrix: architecture/responsibility-matrix.md
+      - Problem: architecture/problem-statement.md
+      - Goals: architecture/goals.md
+      - Non-goals: architecture/non-goals.md
+      - Pattern model: architecture/pattern-model.md
+      - State: architecture/state-model.md
+      - Policy: architecture/policy-model.md
+      - Intervention: architecture/intervention-model.md
+      - Failure strategy: architecture/failure-strategy.md
+      - Testing: architecture/testing.md
+      - Architecture decision records: architecture/decisions.md
+  - Integrations:
+      - Compatibility: integrations/compatibility.md
+      - LangGraph: architecture/langgraph.md
+      - LangChain: architecture/langchain.md
+      - langgraph-xai: architecture/langgraph-xai.md
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
