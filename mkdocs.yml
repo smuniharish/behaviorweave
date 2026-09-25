@@ -10,6 +10,7 @@ theme:
 nav:
   - Home: index.md
   - Get started: quickstart.md
+  - Agent Skills: agent-skills.md
   - API reference: api-reference.md
   - Live examples: live-examples.md
   - Patterns: patterns.md
