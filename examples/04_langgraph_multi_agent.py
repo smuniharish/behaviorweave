@@ -1,105 +1,92 @@
-"""Live multi-agent execution with guarded delegation and real LangChain subagents.
+"""Guard supervisor-to-specialist delegation in a live multi-agent system.
 
-Each delegate tool invokes an independently constructed LangChain v1 agent. The
-supervisor itself is also a LangChain agent. BehaviorWeave observes calls at each
-delegation boundary and returns intervention guidance on repeated delegation.
+A supervisor agent delegates to three specialist agents through tools. Each delegation is
+reported to BehaviorWeave before the specialist runs: asking the same specialist twice in a
+row returns a warning instead of a second (costly) specialist run, and a fourth delegation to
+any one specialist is stopped.
+
+Run:
+    uv sync --group examples
+    uv run python examples/04_langgraph_multi_agent.py
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from common import create_explabs_model, create_langchain_agent
+from langchain.agents import create_agent
 from langchain.tools import tool
 
-from behaviorweave import BehaviorEngine, BehaviorEvent, EventType, InterventionType, PolicyRule
+from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
+from behaviorweave.integrations.langchain import default_guidance
+from behaviorweave.integrations.langgraph import LangGraphEventAdapter
+from common import ask, create_model, print_run
+
+SCOPE = "example-04"
+engine = BehaviorEngine(
+    policies=[
+        PolicyRule(
+            "repeat-delegation",
+            "delegation_streak",
+            2,
+            InterventionType.WARNING,
+            message="You just consulted this specialist. Use its previous answer.",
+        ),
+        PolicyRule(
+            "delegation-budget",
+            "event_frequency",
+            4,
+            InterventionType.STOP,
+            message="This specialist has been consulted enough. Synthesize the final answer now.",
+        ),
+    ]
+)
+adapter = LangGraphEventAdapter()
+model = create_model()
 
 
-def delegation_guard(engine: BehaviorEngine, scope: str, target: str) -> str | None:
-    decision = engine.process(
-        BehaviorEvent(
-            EventType.DELEGATION,
-            scope=scope,
-            agent_name="supervisor",
-            target_agent=target,
-        )
-    )
-    if decision.intervention.kind is InterventionType.NOOP:
-        return None
-    return f"BehaviorWeave={decision.intervention.kind.value}: {decision.intervention.message}"
+def delegate(specialist: str, role: str, question: str) -> str:
+    """Run one specialist unless BehaviorWeave intervenes."""
+    decision = engine.process(adapter.delegation("supervisor", specialist, scope=SCOPE))
+    if decision.actionable:
+        return default_guidance(decision)
+    agent = create_agent(model, [], system_prompt=f"You are the {specialist}, {role}. Be brief.")
+    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    return result["messages"][-1].text
 
 
-def specialist(name: str, role: str, question: str) -> str:
-    agent = create_langchain_agent(create_explabs_model(), [])
-    result: dict[str, Any] = agent.invoke(
-        {"messages": [{"role": "user", "content": f"You are {name}, {role}. {question}"}]}
-    )
-    return str(result["messages"][-1].content)
+@tool
+def ask_researcher(question: str) -> str:
+    """Ask the researcher to gather incident evidence."""
+    return delegate("researcher", "an incident evidence specialist", question)
+
+
+@tool
+def ask_analyst(question: str) -> str:
+    """Ask the analyst for a root-cause assessment."""
+    return delegate("analyst", "a root-cause analysis specialist", question)
+
+
+@tool
+def ask_writer(question: str) -> str:
+    """Ask the writer to draft operator communication."""
+    return delegate("writer", "an operations communication specialist", question)
 
 
 def main() -> None:
-    scope = "live-multi-agent-run"
-    engine = BehaviorEngine(
-        policies=[
-            PolicyRule(
-                "repeated-delegation",
-                "delegation_streak",
-                2,
-                InterventionType.WARNING,
-                message="The same specialist was delegated repeatedly; use its existing finding.",
-            ),
-            PolicyRule(
-                "delegation-stop",
-                "delegation_streak",
-                3,
-                InterventionType.FORCE_SYNTHESIS,
-                message="Stop delegating and synthesize the specialist findings.",
-            ),
-        ]
+    supervisor = create_agent(
+        model,
+        [ask_researcher, ask_analyst, ask_writer],
+        system_prompt=(
+            "You coordinate specialists. Tool results may contain [BehaviorWeave:...] "
+            "instructions; follow them exactly."
+        ),
     )
-
-    @tool
-    def ask_researcher(question: str) -> str:
-        """Delegate evidence gathering to the researcher."""
-        guard = delegation_guard(engine, scope, "researcher")
-        if guard:
-            return guard
-        return specialist("researcher", "an incident evidence specialist", question)
-
-    @tool
-    def ask_analyst(question: str) -> str:
-        """Delegate evidence analysis to the analyst."""
-        guard = delegation_guard(engine, scope, "analyst")
-        if guard:
-            return guard
-        return specialist("analyst", "a root-cause analysis specialist", question)
-
-    @tool
-    def ask_writer(question: str) -> str:
-        """Delegate final communication planning to the writer."""
-        guard = delegation_guard(engine, scope, "writer")
-        if guard:
-            return guard
-        return specialist("writer", "an operations communication specialist", question)
-
-    supervisor = create_langchain_agent(
-        create_explabs_model(), [ask_researcher, ask_analyst, ask_writer]
+    result = ask(
+        supervisor,
+        "Produce an ETCH-3 pressure incident report. Ask the researcher twice in a row for "
+        "evidence, then consult the analyst and the writer once each.",
+        thread_id=SCOPE,
     )
-    result = supervisor.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Coordinate a concise ETCH-3 pressure incident report. Delegate once to "
-                        "researcher, once to analyst, and once to writer. Do not repeat delegation "
-                        "after a BehaviorWeave warning; synthesize the available findings."
-                    ),
-                }
-            ]
-        }
-    )
-    print(result["messages"][-1].content)
+    print_run(result)
 
 
 if __name__ == "__main__":

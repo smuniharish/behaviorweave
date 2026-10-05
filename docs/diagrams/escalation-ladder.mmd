@@ -1,0 +1,13 @@
+flowchart LR
+    c1["Call 1<br/><b>noop</b>"] --> c2["Call 2<br/><b>nudge</b>"] --> c3["Call 3<br/><b>warning</b>"] --> c4["Call 4<br/><b>human_review</b>"] --> c5["Call 5<br/><b>stop</b><br/>tool blocked"]
+
+    classDef quiet fill:#f3f4f6,stroke:#9ca3af,color:#374151
+    classDef nudge fill:#e3f2fd,stroke:#1e88e5,color:#0d47a1
+    classDef warning fill:#fff8e1,stroke:#f9a825,color:#7a5800
+    classDef review fill:#f3e5f5,stroke:#8e24aa,color:#4a148c
+    classDef stop fill:#ffebee,stroke:#e53935,color:#b71c1c
+    class c1 quiet
+    class c2 nudge
+    class c3 warning
+    class c4 review
+    class c5 stop

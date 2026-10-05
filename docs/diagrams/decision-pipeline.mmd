@@ -1,0 +1,19 @@
+flowchart TD
+    event(["BehaviorEvent"]) --> match{{"Matches a pattern<br/>that has policies?"}}
+    match -- no --> noop1(["noop"])
+    match -- yes --> seen{{"Event ID already<br/>recorded by the pattern?"}}
+    seen -- yes --> duplicate(["original action repeated, marked duplicate<br/>state unchanged"])
+    seen -- no --> advance["Pattern advances its scoped state<br/>in the same atomic update"]
+    advance --> eligible{{"Count at or above<br/>a rule's threshold?"}}
+    eligible -- no --> noop2(["noop"])
+    eligible -- yes --> select["Pick the applicable rule:<br/>priority, threshold, terminal, declaration order"]
+    select --> withheld{{"Rule cooling down, or<br/>once-only rule already fired?"}}
+    withheld -- yes --> suppressed(["noop, suppressed, with explanation"])
+    withheld -- no --> rank["Rank candidates across patterns:<br/>actionable, priority, terminal,<br/>count, declaration order"]
+    rank --> record["Atomically record the winner:<br/>history, cooldown, and decision"]
+    record --> decision(["Intervention with explanation"])
+
+    classDef quiet fill:#f3f4f6,stroke:#9ca3af,color:#374151
+    classDef accent fill:#4051b5,stroke:#283593,color:#ffffff
+    class noop1,noop2,suppressed,duplicate quiet
+    class decision accent

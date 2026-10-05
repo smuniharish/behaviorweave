@@ -1,28 +1,41 @@
-# BehaviorWeave Agent Skills distribution
+# BehaviorWeave Agent Skill
 
-This directory is the canonical Agent Skills distribution for BehaviorWeave. It contains procedural guidance for coding agents that need to integrate, configure, test, or debug the existing BehaviorWeave package.
+This directory distributes the `behaviorweave` Agent Skill: instructions, references, a setup
+check, and a test template that teach coding agents to integrate the `behaviorweave` package
+correctly. It is not part of the Python package and adds no runtime behavior.
 
-It is not a Python package and does not add runtime behavior.
+## Layout
 
-| Component | Location | Purpose |
-| --- | --- | --- |
-| BehaviorWeave runtime | [`../src/behaviorweave/`](../src/behaviorweave) | The published Python package and its supported public API. |
-| BehaviorWeave Agent Skill | [`skills/behaviorweave/`](./skills/behaviorweave) | Canonical agent-oriented instructions and concise reference material. |
-| Skill validation | [`validation/`](./validation) | Validation procedure and realistic activation/task matrix. |
+| Path | Contents |
+| --- | --- |
+| [`skills/behaviorweave/SKILL.md`](skills/behaviorweave/SKILL.md) | When to use the skill, the core workflow, and the rules an integration follows |
+| [`skills/behaviorweave/references/`](skills/behaviorweave/references/) | `API.md`, `RECIPES.md`, and `TROUBLESHOOTING.md`, read when a task needs them |
+| [`skills/behaviorweave/scripts/verify_setup.py`](skills/behaviorweave/scripts/verify_setup.py) | An offline check of the project's environment, a guarded agent, a guarded graph, and provenance mapping |
+| [`skills/behaviorweave/assets/test_behavior_policy.py`](skills/behaviorweave/assets/test_behavior_policy.py) | A pytest template for testing an application's behavior policies |
+| [`validation/`](validation/) | How the skill is validated and reviewed |
 
-The canonical skill follows the Agent Skills `SKILL.md` format: a directory-scoped Markdown instruction file with required `name` and `description` YAML frontmatter. Its `name` matches its containing directory (`behaviorweave`), and only the specification's required frontmatter is used for portability.
+## Format
 
-The authoritative documentation is at https://behaviorweave.readthedocs.io/en/latest/ and the source repository is https://github.com/smuniharish/behaviorweave.
+The skill follows the [Agent Skills specification](https://agentskills.io/specification):
 
-Compatible agents should load [`skills/behaviorweave/SKILL.md`](./skills/behaviorweave/SKILL.md) when working on BehaviorWeave integrations, behavioral policy tuning, repeated tool-call loops, or runtime intervention design. The skill links to the repository's authoritative documentation and examples instead of maintaining a second copy of them.
+- The `SKILL.md` frontmatter has `name`, which matches the directory, and `description`,
+  `license`, `compatibility`, and `metadata.version`. The version equals the `behaviorweave`
+  release the skill describes.
+- `SKILL.md` stays short. Details live in `references/`, one level deep, so an agent loads
+  them only when a task needs them.
+- Scripts and assets are referenced by paths relative to the skill directory.
 
-## Maintaining the distribution
+Every Agent Skills host reads the same directory, so there is no separate copy for Claude
+Code, Codex, Cursor, or GitHub Copilot. Installation is described in the
+[documentation](https://behaviorweave.readthedocs.io/en/latest/agent-skills/).
 
-When BehaviorWeave's public API, supported integrations, or documented behavior changes:
+## Maintaining the skill
 
-1. Update the canonical skill and only the reference material affected by that verified change.
-2. Link to the corresponding implementation, tests, examples, or documentation; do not duplicate runtime logic.
-3. Run the validation process in [`validation/README.md`](./validation/README.md).
-4. Do not add platform-specific copies of the skill text. Add thin metadata only when a host's current official documentation demonstrates it is required.
+When the public API or documented behavior changes:
 
-The distribution is covered by the repository's Apache License 2.0; see the [repository license](https://github.com/smuniharish/behaviorweave/blob/master/LICENSE).
+1. Update the affected part of the skill, and `metadata.version` with each release.
+2. Check every changed snippet and claim against the code, tests, or documentation. Leave out
+   anything that is not implemented.
+3. Run the checks in [`validation/README.md`](validation/README.md).
+
+The skill is covered by the repository's Apache License 2.0; see [LICENSE](../LICENSE).

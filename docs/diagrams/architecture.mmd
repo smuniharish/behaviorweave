@@ -1,0 +1,28 @@
+flowchart TB
+    subgraph host["Your agent runtime"]
+        direction LR
+        lc["<b>LangChain agent</b><br/>tool calls"]
+        lg["<b>LangGraph graph</b><br/>nodes and handoffs"]
+        mcp["<b>MCP server</b><br/>tool handlers"]
+        xai["<b>langgraph-xai</b><br/>provenance records"]
+    end
+
+    subgraph bw["BehaviorWeave"]
+        direction TB
+        integrations["<b>Integrations</b><br/>middleware and adapters"]
+        event["<b>BehaviorEvent</b><br/>normalized and fingerprinted"]
+        patterns["<b>Pattern detectors</b><br/>repeats, streaks, oscillation, frequency"]
+        store[("<b>State store</b><br/>scoped, atomic, idempotent")]
+        policies["<b>Policy engine</b><br/>thresholds, priority, cooldowns, once-only"]
+        decision["<b>InterventionDecision</b><br/>kind, reason, explanation"]
+        integrations --> event --> patterns --> policies --> decision
+        patterns <--> store
+    end
+
+    host -- observable activity --> integrations
+    decision -. "host applies the decision:<br/>nudge, block, escalate, stop" .-> applied(["Your runtime acts"])
+
+    classDef accent fill:#4051b5,stroke:#283593,color:#ffffff
+    classDef outcome fill:#e8f5e9,stroke:#43a047,color:#1b5e20
+    class decision accent
+    class applied outcome

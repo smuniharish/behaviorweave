@@ -1,0 +1,8 @@
+/* Rendered diagrams have a white canvas: round it, and frame it on the dark palette. */
+.md-typeset img[src*="assets/diagrams/"] {
+  border-radius: 0.4rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset img[src*="assets/diagrams/"] {
+  box-shadow: 0 0 0 0.05rem var(--md-default-fg-color--lightest);
+}

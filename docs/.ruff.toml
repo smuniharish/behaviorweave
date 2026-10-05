@@ -1,0 +1,3 @@
+# Documentation snippets are formatted to fit the documentation site's code blocks.
+extend = "../pyproject.toml"
+line-length = 80

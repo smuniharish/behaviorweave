@@ -1,48 +1,59 @@
-"""100 concurrent real provider-backed LangChain agent runs against one guard.
+"""Share one BehaviorWeave engine across concurrent live agent runs.
 
-Each worker constructs and invokes a LangChain v1 agent using the configured live
-OpenAI-compatible model. All agents share one BehaviorWeave guard, so this is both a
-real API load test and an atomic shared-state test. It can incur provider cost.
+Each worker runs its own provider-backed agent, but all of them report to one engine and one
+shared scope. An audit sink counts every observed tool call; because state updates are
+atomic, the count equals the number of tool calls the workers made. This example incurs one
+agent run per worker; set ``BEHAVIORWEAVE_CONCURRENCY_CALLS`` to change the load (default 10).
 
 Run:
-    uv sync --extra real-model
-    $env:EXPLABS_API_KEY = "<credential>"
+    uv sync --group examples
     uv run python examples/14_concurrency.py
 """
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
-from common import default_guard, invoke_live_agent
+from behaviorweave import AuditRecord, BehaviorEngine, EventType, InterventionType, PolicyRule
+from common import ask, create_model, guarded_agent
+
+
+class ToolCallCounter:
+    """Thread-safe audit sink counting observed tool calls."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self._lock = Lock()
+
+    def __call__(self, record: AuditRecord) -> None:
+        """Count ``record`` if it observed a tool call."""
+        if record.event.event_type is EventType.TOOL_CALL:
+            with self._lock:
+                self.count += 1
 
 
 def main() -> None:
-    if not os.environ.get("EXPLABS_API_KEY"):
-        raise SystemExit(
-            "EXPLABS_API_KEY is required because this example runs real provider-backed agents."
-        )
-
-    calls = int(os.environ.get("BEHAVIORWEAVE_CONCURRENCY_CALLS", "100"))
-    guard = default_guard(scope="concurrent-live-agent-run")
-
-    def invoke_worker(index: int) -> str:
-        result = invoke_live_agent(
-            (
-                "Call get_alarm exactly once for ETCH-3, include the returned evidence in "
-                f"your concise report, and label this request worker-{index}."
-            ),
-            guard=guard,
-        )
-        return str(result["messages"][-1].content)
-
-    with ThreadPoolExecutor(max_workers=min(20, calls)) as pool:
-        responses = list(pool.map(invoke_worker, range(calls)))
-
-    state = guard.engine.store.get("concurrent-live-agent-run:repeated_tool_call")
-    print(
-        f"Completed {len(responses)} real model-backed LangChain agent runs; "
-        f"observed tool-repeat count={state.count if state else 0}."
+    workers = int(os.environ.get("BEHAVIORWEAVE_CONCURRENCY_CALLS", "10"))
+    counter = ToolCallCounter()
+    engine = BehaviorEngine(
+        policies=[PolicyRule("fleet-watch", "event_frequency", 10_000, InterventionType.WARNING)],
+        audit_sink=counter,
     )
+    agent = guarded_agent(engine, model=create_model(), scope="shared-fleet")
+
+    def work(index: int) -> int:
+        result = ask(
+            agent,
+            f"Call get_alarm exactly once for machine ETCH-{index}, then summarize it.",
+            thread_id=f"worker-{index}",
+        )
+        return sum(1 for message in result["messages"] if message.type == "tool")
+
+    with ThreadPoolExecutor(max_workers=min(workers, 16)) as pool:
+        tool_results = sum(pool.map(work, range(workers)))
+
+    print(f"{workers} concurrent agent runs returned {tool_results} tool results.")
+    print(f"BehaviorWeave observed {counter.count} tool calls in the shared scope.")
 
 
 if __name__ == "__main__":

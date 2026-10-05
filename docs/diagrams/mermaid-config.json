@@ -1,0 +1,23 @@
+{
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Segoe UI, Inter, Helvetica, Arial, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#eef1fb",
+    "primaryBorderColor": "#4051b5",
+    "primaryTextColor": "#1f2937",
+    "secondaryColor": "#f6f7fb",
+    "tertiaryColor": "#ffffff",
+    "lineColor": "#4051b5",
+    "clusterBkg": "#fafbff",
+    "clusterBorder": "#c5cae9",
+    "noteBkgColor": "#fff8e1",
+    "noteBorderColor": "#f9a825",
+    "actorBkg": "#eef1fb",
+    "actorBorder": "#4051b5",
+    "signalColor": "#37474f",
+    "signalTextColor": "#1f2937"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "padding": 14, "wrappingWidth": 340 },
+  "sequence": { "mirrorActors": false, "showSequenceNumbers": true }
+}

@@ -1,61 +1,234 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.32.4", "hatch-fancy-pypi-readme>=25.1.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "behaviorweave"
-version = "0.1.0"
-description = "Behavioral policy and intervention framework for LangGraph and LangChain agents."
-readme = "README.md"
-requires-python = ">=3.12,<3.13"
-license = { text = "Apache-2.0" }
+dynamic = ["version", "readme"]
+description = "Deterministic behavioral policies and interventions for LangGraph and LangChain agents."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "S Muni Harish" }]
-keywords = ["langgraph", "langchain", "agents", "behavior", "policy", "intervention"]
+keywords = [
+  "agents",
+  "ai-safety",
+  "guardrails",
+  "intervention",
+  "langchain",
+  "langgraph",
+  "policy",
+]
 classifiers = [
-  "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: Apache Software License",
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
 dependencies = [
-  "langchain>=1.0",
-  "langgraph>=1.0",
-  "langgraph-xai>=0.1.0",
+  "langchain>=1.4.3,<2",
+  "langchain-core>=1.6.6,<2",
+  "langgraph>=1.2.12,<2",
+  "langgraph-xai>=1.0.0,<2",
 ]
 
-[project.optional-dependencies]
-examples = ["langgraph-swarm", "deepagents"]
-mcp = ["langchain[mcp]>=1.4"]
-real-model = ["langchain-openai>=1.0"]
-dev = [
-  "black>=25.0",
-  "hypothesis>=6.0",
-  "langchain[mcp]>=1.4",
-  "mkdocs-material>=9.0",
-  "mkdocs>=1.6",
-  "pyrefly>=0.18",
-  "pytest>=8.0",
-  "pytest-asyncio>=0.24",
-  "ruff>=0.9",
+[project.urls]
+Homepage = "https://github.com/smuniharish/behaviorweave"
+Documentation = "https://behaviorweave.readthedocs.io/en/latest/"
+Repository = "https://github.com/smuniharish/behaviorweave"
+Issues = "https://github.com/smuniharish/behaviorweave/issues"
+Changelog = "https://github.com/smuniharish/behaviorweave/blob/master/CHANGELOG.md"
+
+[dependency-groups]
+test = [
+  "hypothesis>=6.168.3",
+  "langchain[mcp]>=1.4.3",
+  "mcp>=2.3.0",
+  "pytest>=9.1.1",
+  "pytest-asyncio>=1.4.0",
+  "pytest-cov>=7.1.0",
+  "skills-ref>=0.1.1",
 ]
+lint = ["ruff>=0.16.10"]
+types = ["pyrefly>=1.3.2"]
+docs = [
+  "mkdocs>=1.6.1,<2",
+  "mkdocs-glightbox>=0.5.2,<1",
+  "mkdocs-material>=9.7.7,<10",
+  "mkdocstrings>=1.0.6,<2",
+  "mkdocstrings-python>=2.0.9,<3",
+]
+examples = [
+  "deepagents>=0.7.21",
+  "langchain[mcp]>=1.4.3",
+  "langchain-openai>=1.6.7",
+  "langgraph-swarm>=0.1.0",
+  "mcp>=2.3.0",
+]
+dev = [
+  { include-group = "test" },
+  { include-group = "lint" },
+  { include-group = "types" },
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.hatch.version]
+path = "src/behaviorweave/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/behaviorweave"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/examples",
+  "/docs",
+  "/scripts",
+  "/behaviorweave-skills",
+  "/mkdocs.yml",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/CODE_OF_CONDUCT.md",
+  "/CONTRIBUTING.md",
+  "/SECURITY.md",
+  "/LICENSE",
+]
+exclude = ["__pycache__", "*.pyc"]
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+# PyPI cannot resolve repository-relative paths: point images at raw files and links at GitHub.
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(!\[[^\]]*\]\()(?!https?://)([^)\s]+)\)'
+replacement = '\1https://raw.githubusercontent.com/smuniharish/behaviorweave/master/\2)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = 'src="(?!https?://)([^"]+)"'
+replacement = 'src="https://raw.githubusercontent.com/smuniharish/behaviorweave/master/\1"'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(\[[^\]]*\]\()(?!https?://|#|mailto:)([^)\s]+)\)'
+replacement = '\1https://github.com/smuniharish/behaviorweave/blob/master/\2)'
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
-[tool.black]
-line-length = 100
-target-version = ["py312"]
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+  "A",     # builtin shadowing
+  "ARG",   # unused arguments
+  "ASYNC", # async pitfalls
+  "B",     # bugbear
+  "C4",    # comprehensions
+  "D",     # docstrings (Google convention)
+  "DTZ",   # timezone-aware datetimes
+  "E",     # pycodestyle errors
+  "ERA",   # commented-out code
+  "F",     # pyflakes
+  "I",     # import order
+  "N",     # naming
+  "PERF",  # performance anti-patterns
+  "PIE",   # misc. lints
+  "PT",    # pytest style
+  "PTH",   # pathlib
+  "RUF",   # ruff-specific
+  "S",     # security (bandit)
+  "SIM",   # simplifications
+  "T20",   # print statements
+  "TC",    # type-checking imports
+  "UP",    # pyupgrade
+  "W",     # pycodestyle warnings
+]
+ignore = [
+  "D105", # magic methods document themselves
+  "D107", # __init__ is documented on the class
+  # Public dataclasses and framework-introspected signatures must resolve their annotations at
+  # runtime (typing.get_type_hints, pydantic, LangChain tools), so annotation-only imports of
+  # standard-library and first-party types stay at runtime.
+  "TC001",
+  "TC003",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and examples define LangChain tools and LangGraph nodes whose signatures the frameworks
+# inspect at runtime, and examples print their results.
+"tests/**" = ["ARG", "D", "S101", "TC"]
+"examples/**" = ["D103", "S101", "T20", "TC"]
+"scripts/**" = ["T20"]
+"behaviorweave-skills/**" = ["ARG", "D103", "S101", "T20", "TC"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["behaviorweave", "common", "support"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "examples: runs an example script offline with a scripted chat model",
+  "live: runs an example against a real model endpoint (needs OPENAI_API_KEY and BEHAVIORWEAVE_MODEL)",
+  "benchmark: generous performance budgets that catch order-of-magnitude regressions",
+]
+filterwarnings = [
+  "error",
+  "ignore::langchain_core._api.beta_decorator.LangChainBetaWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["behaviorweave"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  '^\s*\.\.\.$',
+]
 
 [tool.pyrefly]
 project-includes = [
-    "src/**/*.py",
-    "tests/**/*.py",
+  "src/**/*.py",
+  "tests/**/*.py",
+  "examples/**/*.py",
+  "scripts/**/*.py",
+  "behaviorweave-skills/**/*.py",
 ]
+search-path = ["src", "examples", "tests"]
+
+# LangGraph bounds StateGraph's state type with protocols that pyrefly does not yet match
+# against TypedDict classes; the package itself never specializes StateGraph.
+[[tool.pyrefly.sub-config]]
+matches = "examples/**"
+errors = { bad-specialization = false }
+
+[[tool.pyrefly.sub-config]]
+matches = "tests/**"
+errors = { bad-specialization = false }
+
+[[tool.pyrefly.sub-config]]
+matches = "behaviorweave-skills/**"
+errors = { bad-specialization = false }

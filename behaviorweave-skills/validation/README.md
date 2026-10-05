@@ -1,53 +1,60 @@
-# BehaviorWeave Agent Skill validation
+# Validating the BehaviorWeave skill
 
-This directory documents the repeatable validation process for the canonical skill. It is intentionally not a second runtime test suite and does not provide a host-specific package.
+## Automated checks
 
-The authoritative documentation for this package is https://behaviorweave.readthedocs.io/en/latest/ and the source repository is https://github.com/smuniharish/behaviorweave.
+Run from the repository root:
 
-The Agent Skills specification defines `name` and `description` as the required frontmatter. No official validator is specified there, so validation combines structural checks with source-backed content review.
+```bash
+uv run pytest tests/test_skill.py
+uvx --from skills-ref agentskills validate behaviorweave-skills/skills/behaviorweave
+```
 
-## Structural validation
+`tests/test_skill.py` runs offline in continuous integration. It checks that:
 
-For every change:
+- the skill passes the reference validator, `skills-ref`, which applies the specification's
+  rules for `name`, `description`, `compatibility`, and the other frontmatter fields;
+- `name` matches the directory, `license` is `Apache-2.0`, and `metadata.version` equals the
+  package version;
+- `SKILL.md` has fewer than 500 lines, and `references/` is one level deep;
+- every relative link in the skill resolves;
+- `scripts/verify_setup.py` passes, with warnings treated as errors;
+- `assets/test_behavior_policy.py` passes.
 
-1. Confirm [`../skills/behaviorweave/SKILL.md`](../skills/behaviorweave/SKILL.md) exists and starts with YAML frontmatter.
-2. Confirm `name` is exactly `behaviorweave` (the directory name), contains only lowercase letters and hyphens, and is at most 64 characters.
-3. Confirm `description` is non-empty, at most 1024 characters, and states both the capability and when to activate it.
-4. Confirm only `name` and `description` appear in frontmatter unless a current specification and demonstrated host requirement justify more.
-5. Resolve every relative Markdown target in the skill, its references, and this directory; no target may point to a deleted file.
-6. Confirm the distribution contains one `skills/behaviorweave/` canonical knowledge source and no duplicate host-specific copies.
-7. Search the distribution for stale package names, invented CLI commands, credentials, or unrelated project references.
+`tests/test_docs.py` also runs every Python snippet in the skill that is not marked
+`<!-- skip-snippet: ... -->` and compares each `print(...)  # expected` comment with the
+actual output.
 
-## Source-accuracy review
+## Source review
 
-Review every code snippet and factual claim against its source:
+Automated checks cannot tell whether guidance is correct. For every change, check each
+snippet and claim against its source:
 
 | Claim area | Source of truth |
 | --- | --- |
-| Public import and package version | [`../../src/behaviorweave/__init__.py`](../../src/behaviorweave/__init__.py) |
-| Engine and policy evaluation flow | [`../../src/behaviorweave/engine.py`](../../src/behaviorweave/engine.py) |
-| Built-in patterns and state tracking | [`../../src/behaviorweave/patterns.py`](../../src/behaviorweave/patterns.py) |
-| Policy rules and intervention mapping | [`../../src/behaviorweave/policies.py`](../../src/behaviorweave/policies.py) |
-| Events and observable data model | [`../../src/behaviorweave/events.py`](../../src/behaviorweave/events.py) |
-| State store and cooldown semantics | [`../../src/behaviorweave/state.py`](../../src/behaviorweave/state.py) |
-| Supported behavior and design principles | [`../../docs/index.md`](../../docs/index.md), [`../../docs/quickstart.md`](../../docs/quickstart.md), [`../../docs/patterns.md`](../../docs/patterns.md), [`../../docs/policies.md`](../../docs/policies.md) |
-| Executable workflows and examples | [`../../examples/`](../../examples) and [`../../tests/`](../../tests) |
+| Public imports and the package version | [`src/behaviorweave/__init__.py`](../../src/behaviorweave/__init__.py) and [`pyproject.toml`](../../pyproject.toml) |
+| Engine flow, precedence, and idempotency | [`src/behaviorweave/engine.py`](../../src/behaviorweave/engine.py) |
+| Built-in patterns and counting rules | [`src/behaviorweave/patterns.py`](../../src/behaviorweave/patterns.py) |
+| Policy rules, cooldowns, and once-only | [`src/behaviorweave/policies.py`](../../src/behaviorweave/policies.py) |
+| Events, identities, and fingerprints | [`src/behaviorweave/events.py`](../../src/behaviorweave/events.py) |
+| State, stores, and serialization | [`src/behaviorweave/state.py`](../../src/behaviorweave/state.py) |
+| Middleware and adapters | [`src/behaviorweave/integrations/`](../../src/behaviorweave/integrations/) |
+| Documented behavior | [`docs/`](../../docs/), especially `policies.md`, `state.md`, and `integrations/` |
+| Working patterns | [`examples/`](../../examples/) and [`tests/`](../../tests/) |
 
-If a behavior lacks an implementation, test, or authoritative source, omit it from the skill rather than infer a public API.
+If a behavior has no implementation, test, or documentation, leave it out of the skill rather
+than infer it.
 
-## Agent-task matrix
+## Activation matrix
 
-The following matrix was reviewed against the canonical [`SKILL.md`](../skills/behaviorweave/SKILL.md), the supporting references, and the runtime implementation.
+Review that the description and instructions lead an agent to the right route for each task:
 
-| Task | Activates | Grounded route | Avoids |
+| Task | Activates | Route | Avoids |
 | --- | --- | --- | --- |
-| “Add BehaviorWeave to my LangChain tool boundary.” | Yes | `references/integration.md` and the public `BehaviorEvent`/`BehaviorEngine` API. | Invented adapter APIs or prompt-only guardrails. |
-| “My agent keeps retrying the same tool.” | Yes | Built-in pattern mapping and policy rule guidance. | Blindly mapping every loop to `STOP` or a generic guardrail. |
-| “My node or delegation loop is repeating.” | Yes | Built-in `repeated_node_execution` and `delegation_streak` patterns. | Silently ignoring `scope` or concurrency semantics. |
-| “Define a custom pattern for repeated behavior.” | Yes | Custom `Pattern` guidance in the skill and docs. | Copying built-in pattern logic or inventing a second runtime API. |
-| “Configure production-grade policy thresholds.” | Yes | `PolicyRule`, `cooldown`, `once_only`, and priority semantics. | Hard-coded thresholds without observing runtime behavior. |
-| “Debug why my intervention never fires.” | Yes | Event-stream and state debugging guidance. | Guessing from prompt text or changing internal state manually. |
-
-## Repository validation
-
-Skill-only work should at least run the structural/link/source review above and review the resulting Git diff. If runtime files change, run the CI-equivalent checks documented in [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md). This distribution must not require a BehaviorWeave runtime change.
+| "Add BehaviorWeave to my LangChain agent." | Yes | `BehaviorWeaveMiddleware` in `create_agent(middleware=[...])`, scoped by `thread_id`. | Hand-written tool guards or invented adapter APIs. |
+| "My agent keeps calling the same tool." | Yes | `repeated_tool_call` with a nudge-then-stop ladder. | Prompt-only "do not repeat" instructions. |
+| "My tool keeps failing and the agent keeps retrying." | Yes | `failure_streak` or `retry_streak`, with outcomes tracked by the middleware. | Ad hoc retry counters beside the engine. |
+| "Two agents keep handing the task back and forth." | Yes | `oscillation` with handoff or delegation events. | Treating ping-pong as a consecutive repeat. |
+| "My graph node loops." | Yes | `repeated_node_execution` or an `event_frequency` budget, routed in a conditional edge. | Changing graph internals or only raising the recursion limit. |
+| "Pause for a human when the agent is stuck." | Yes | A `human_review` rule on tool calls with `interrupt()` in `on_decision`, or a `pause` rule on outcomes with `release(scope)` from the application before resuming; a checkpointer either way. | Skipping duplicates around `interrupt()`, or releasing a halt from inside the hook. |
+| "Why does my intervention never fire?" | Yes | Troubleshooting: event types, identities, scopes, resets, cooldowns, and once-only. | Guessing from prompt text or editing state keys. |
+| "Classify whether my agent is behaving well with an LLM." | No | Not this package's purpose. | Inventing model-based detectors. |

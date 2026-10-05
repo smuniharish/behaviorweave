@@ -1,19 +1,112 @@
 name: CI
+
 on:
   push:
+    branches: [master]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
+  lint:
+    name: Lint and type check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyrefly check
+
+  test:
+    name: Test on ${{ matrix.os }} with Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      HYPOTHESIS_PROFILE: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      # Warnings are errors (pyproject.toml), and coverage must stay at 100%.
+      - run: uv run pytest --cov --cov-report=term-missing
+
+  lowest:
+    name: Test with the lowest supported dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev
-      - run: uv run pytest
-      - run: uv run ruff check .
-      - run: uv run black --check .
-      - run: uv run pyrefly check
-      - run: uv run mkdocs build --strict
+          enable-cache: true
+      - run: uv sync --resolution lowest-direct --all-groups
+      - run: uv run --no-sync pytest
+
+  package:
+    name: Build and smoke-test the package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
       - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: Install the wheel into a clean environment and run the setup check
+        run: |
+          uv venv --no-project "$RUNNER_TEMP/wheel"
+          uv pip install --python "$RUNNER_TEMP/wheel" dist/*.whl
+          "$RUNNER_TEMP/wheel/bin/python" behaviorweave-skills/skills/behaviorweave/scripts/verify_setup.py
+      - name: Run the test suite from the source distribution
+        run: |
+          mkdir "$RUNNER_TEMP/sdist"
+          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP/sdist" --strip-components=1
+          cd "$RUNNER_TEMP/sdist"
+          uv sync --all-groups
+          uv run pytest -p no:cacheprovider
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    env:
+      # MkDocs is pinned below 2.0 (pyproject.toml), so Material's MkDocs 2.0 notice does not apply.
+      NO_MKDOCS_2_WARNING: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --group docs
+      - run: uv run mkdocs build --strict
+      # Verifies, without Node.js, that every diagram image was rendered from its current source.
+      - run: uv run python scripts/render_diagrams.py --check

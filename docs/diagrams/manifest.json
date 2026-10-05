@@ -1,0 +1,25 @@
+{
+  "renderer": "@mermaid-js/mermaid-cli@12.0.0",
+  "diagrams": {
+    "architecture": {
+      "source": "1bad451af58ebceb378512fdf892e14f5c6d91270e1eb4ea86f099fd233385f7",
+      "image": "304c161ca64f8e9c068045556309744a37669bd61bdf708494807f299f37a3f5"
+    },
+    "decision-pipeline": {
+      "source": "63f7876c5691a68a315d1206cba0d0bd0930fd86f6b9905e81b693a517665c2c",
+      "image": "83fcc283cbad5dc9347d56987c7e3d20b15b3bf7cd819df6f27661910854c305"
+    },
+    "escalation-ladder": {
+      "source": "4d6881da59b7478c30555aa3f3ea7ab149dab540482ca0461544374e483bdc11",
+      "image": "207d287de9214f6533d0f8d86c8289727d8c61fa890ef756aefd480ad3da91ef"
+    },
+    "guarded-tool-call": {
+      "source": "5057f2d8f7cba870c28a01ff1a1f50894dd02dcae285cd68058249ac9bb63485",
+      "image": "0e6f3b9caccb0e4da8d685cc3e7373468e35e9f995158f07da1ae6770ec14162"
+    },
+    "pattern-semantics": {
+      "source": "ac5552ba36daeabe3150a5b1b7c2858fb02e7647a76cc949cdaab52234faf8d2",
+      "image": "6c62bfaada0f28fe72a17afa6ade6b72032f458860019b8113f79ee49ec98a09"
+    }
+  }
+}

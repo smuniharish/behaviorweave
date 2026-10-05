@@ -1,37 +1,31 @@
-# Get started
+# Quickstart
 
-BehaviorWeave observes meaningful runtime events, evaluates your policies, and returns
-an intervention decision. It does not take control of a LangChain agent or LangGraph
-graph: your application decides how to apply each decision.
+BehaviorWeave observes runtime events, evaluates your policies, and returns an intervention
+decision. It never takes control of your agent or graph: your application decides how to
+apply each decision.
 
-## 1. Install
+## Install
 
-BehaviorWeave supports Python 3.12 only and uses `uv` for dependency management.
+BehaviorWeave supports Python 3.12, 3.13, and 3.14.
 
-```bash
-uv add behaviorweave
-```
+=== "uv"
 
-For a checkout of this repository:
+    ```bash
+    uv add behaviorweave
+    ```
 
-```bash
-uv sync
-```
+=== "pip"
 
-The base installation includes LangChain, LangGraph, and `langgraph-xai`. Optional
-packages are only needed for the corresponding live examples:
+    ```bash
+    pip install behaviorweave
+    ```
 
-```bash
-uv sync --extra real-model  # Provider-backed LangChain examples
-uv sync --extra mcp         # Model Context Protocol examples
-uv sync --extra examples    # LangGraph Swarm and Deep Agents examples
-```
+The install includes LangChain, LangGraph, and `langgraph-xai`, which the integrations use.
 
-## 2. Define one policy
+## 1. Define policies
 
-A policy joins an observable pattern to an intervention. This policy asks the runtime
-to nudge an agent after it calls the same tool with the same arguments three times in
-succession.
+A policy joins a [pattern](patterns.md) to an intervention. These two rules nudge an agent
+on its second identical tool call and stop it on the third.
 
 ```python
 from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
@@ -39,117 +33,113 @@ from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
 engine = BehaviorEngine(
     policies=[
         PolicyRule(
-            policy_id="repeat-lookup-nudge",
+            policy_id="repeat-nudge",
+            pattern_id="repeated_tool_call",
+            threshold=2,
+            intervention=InterventionType.NUDGE,
+            message="Reuse the result you already have.",
+        ),
+        PolicyRule(
+            policy_id="repeat-stop",
             pattern_id="repeated_tool_call",
             threshold=3,
-            intervention=InterventionType.NUDGE,
-            message="Reuse the lookup result already returned for this request.",
-        )
+            intervention=InterventionType.STOP,
+            message="Identical call blocked. Answer with what you have.",
+        ),
     ]
 )
 ```
 
-`BehaviorEngine` includes the built-in patterns by default. You therefore only need to
-name the pattern that the policy should govern.
+The engine ships with the [built-in patterns](patterns.md#built-in-patterns); policies only
+name the pattern they govern. A typo in a pattern ID raises `PolicyConfigurationError`
+immediately instead of silently never firing.
 
-## 3. Process events at the runtime boundary
+## 2. Process events where behavior is observable
 
-Emit an event where the behavior is observable—for example, immediately before a tool
-is invoked. Use a stable, application-chosen `scope` such as a LangGraph thread ID,
-LangChain run ID, or tenant-and-conversation identifier.
+Report an event at the runtime boundary, for example right before a tool runs. The `scope`
+isolates behavioral history: use a conversation, thread, or run identifier.
 
 ```python
 from behaviorweave import BehaviorEvent
 
-for _ in range(3):
-    decision = engine.process(
+decisions = [
+    engine.process(
         BehaviorEvent.tool_call(
-            "lookup_customer",
-            {"customer_id": "42"},
-            scope="conversation:42",
+            "lookup_customer", {"customer_id": "42"}, scope="conversation-42"
         )
     )
+    for _ in range(3)
+]
 
-print(decision.intervention.kind)
-print(decision.intervention.message)
+print(
+    [d.intervention.kind.value for d in decisions]
+)  # ['noop', 'nudge', 'stop']
+print(decisions[1].intervention.message)  # Reuse the result you already have.
 ```
 
-Output:
-
-```text
-nudge
-Reuse the lookup result already returned for this request.
-```
-
-The first two events return `noop`; the third crosses the policy threshold and returns
-the configured `nudge`.
-
-## 4. Apply the decision
-
-BehaviorWeave returns data and never silently changes graph flow. Map an intervention
-to the behavior appropriate for your application:
+Every decision carries an explanation:
 
 ```python
-from behaviorweave import InterventionType
-
-if decision.intervention.kind is InterventionType.NUDGE:
-    tool_context["behaviorweave_notice"] = decision.intervention.message
-elif decision.intervention.kind is InterventionType.HUMAN_REVIEW:
-    request_human_review(decision.intervention.reason)
-elif decision.intervention.kind is InterventionType.STOP:
-    raise RuntimeError(decision.intervention.reason)
+explanation = decisions[2].explanation
+assert explanation is not None
+print(
+    explanation.policy, explanation.count, explanation.threshold
+)  # repeat-stop 3 3
+print(explanation.reason)  # 'lookup_customer' occurred 3 consecutive times
 ```
 
-## 5. Connect a framework adapter
+## 3. Apply the decision
 
-Adapters normalize framework activity into the same event model. They do not monkey
-patch framework internals and do not execute policies themselves.
+BehaviorWeave returns data. Map each intervention to the behavior your application needs:
 
 ```python
-from behaviorweave import BehaviorEngine
-from behaviorweave.integrations.langchain import LangChainEventAdapter
+def apply(decision):
+    kind = decision.intervention.kind
+    if kind.is_terminal:  # stop or pause
+        return f"halt: {decision.intervention.message}"
+    if kind is InterventionType.HUMAN_REVIEW:
+        return "page an operator"
+    if decision.actionable:
+        return f"tell the agent: {decision.intervention.message}"
+    return "continue"
 
-engine = BehaviorEngine(policies=[...])
-adapter = LangChainEventAdapter()
 
-def before_tool(tool_name: str, arguments: dict[str, object], run_id: str) -> None:
-    event = adapter.tool_start(
-        tool_name,
-        arguments=arguments,
-        scope=f"run:{run_id}",
-    )
-    decision = engine.process(event)
-    # Attach, route, or enforce `decision` in the host runtime.
+actions = [apply(d) for d in decisions]
+print(actions[0])  # continue
+print(actions[1])  # tell the agent: Reuse the result you already have.
+print(actions[2])  # halt: Identical call blocked. Answer with what you have.
 ```
 
-See [API reference](api-reference.md) for every public parameter and
-[Live examples](live-examples.md) for complete LangChain, LangGraph, MCP, Swarm, and
-Deep Agents integrations.
+## 4. Guard a LangChain agent in one line
 
-## Run live-provider examples safely
+For LangChain v1 agents, `BehaviorWeaveMiddleware` does all of the above for every tool
+call: it reports the call, appends guidance to the tool result, blocks the call on `stop`
+or `pause`, and records success and failure outcomes.
 
-The repository never stores provider credentials. Install the opt-in model integration
-and export the key through your local environment:
+<!-- skip-snippet: requires a provider-backed chat model -->
+```python
+from langchain.agents import create_agent
 
-```text
-uv sync --extra real-model
-$env:EXPLABS_API_KEY = "<your-key>"
-uv run python examples/01_langchain_agent.py
+from behaviorweave.integrations.langchain import BehaviorWeaveMiddleware
+
+agent = create_agent(
+    "openai:gpt-4.1-mini",
+    tools=[lookup_customer],
+    middleware=[BehaviorWeaveMiddleware(engine)],
+)
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Look up customer 42."}]},
+    config={"configurable": {"thread_id": "conversation-42"}},
+)
 ```
 
-Use a local `.env` only with a dotenv loader or shell integration that you control;
-never commit it. The live agent calls actual local operational tools through LangChain.
-`BehaviorWeave` observes each tool invocation in real time and injects an intervention
-into the tool response when a repeated call crosses a policy threshold.
+The middleware scopes history by the LangGraph `thread_id`, so each conversation is
+governed independently.
 
-For a real LangGraph run use `examples/03_langgraph_custom_graph.py`; for a real
-supervisor/subagent execution use `examples/04_langgraph_multi_agent.py`; and for the
-LangGraph plus `langgraph-xai` flagship run use `examples/15_complete_agent_guard.py`.
-All four require `EXPLABS_API_KEY`. They are intentionally opt-in and excluded from CI.
+## Next steps
 
-The deterministic examples are intentionally flat files, for example:
-
-```text
-examples/04_langgraph_multi_agent.py
-examples/14_concurrency.py
-```
+- Learn how [patterns](patterns.md) count behavior and how [policies](policies.md) choose
+  a decision.
+- Wire BehaviorWeave into [LangChain](integrations/langchain.md),
+  [LangGraph](integrations/langgraph.md), or an [MCP server](integrations/mcp.md).
+- Run the [live examples](examples.md) against your own model endpoint.

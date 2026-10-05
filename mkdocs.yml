@@ -1,40 +1,133 @@
 site_name: BehaviorWeave
-site_description: Behavioral policy and intervention framework for graph agents
-site_author: Muni Harish
+site_description: Deterministic behavioral policies and interventions for LangGraph and LangChain agents.
+site_author: S Muni Harish
+site_url: https://behaviorweave.readthedocs.io/en/latest/
+repo_url: https://github.com/smuniharish/behaviorweave
+repo_name: smuniharish/behaviorweave
+edit_uri: edit/master/docs/
+copyright: Copyright &copy; 2026 S Muni Harish &middot; Apache-2.0
+
 exclude_docs: |
-  PROJECT_STRUCTURE.md
-  VALIDATION_REPORT.md
-  PRODUCTION_READINESS.md
+  /diagrams/
+  /.ruff.toml
+
+extra_css:
+  - stylesheets/extra.css
+
 theme:
   name: material
-nav:
-  - Home: index.md
-  - Get started: quickstart.md
-  - Agent Skills: agent-skills.md
-  - API reference: api-reference.md
-  - Live examples: live-examples.md
-  - Patterns: patterns.md
-  - Policies: policies.md
-  - Concurrency: concurrency.md
-  - Architecture:
-      - Overview: architecture/overview.md
-      - Responsibility matrix: architecture/responsibility-matrix.md
-      - Problem: architecture/problem-statement.md
-      - Goals: architecture/goals.md
-      - Non-goals: architecture/non-goals.md
-      - Pattern model: architecture/pattern-model.md
-      - State: architecture/state-model.md
-      - Policy: architecture/policy-model.md
-      - Intervention: architecture/intervention-model.md
-      - Failure strategy: architecture/failure-strategy.md
-      - Testing: architecture/testing.md
-      - Architecture decision records: architecture/decisions.md
-  - Integrations:
-      - Compatibility: integrations/compatibility.md
-      - LangGraph: architecture/langgraph.md
-      - LangChain: architecture/langchain.md
-      - langgraph-xai: architecture/langgraph-xai.md
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - content.action.edit
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - glightbox:
+      skip_classes:
+        - skip-lightbox
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            filters: ["!^_"]
+            heading_level: 3
+            inherited_members: false
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_if_no_docstring: false
+            show_root_full_path: false
+            show_root_heading: true
+            show_signature_annotations: true
+            show_source: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true
+
 markdown_extensions:
   - admonition
-  - pymdownx.highlight
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/smuniharish/behaviorweave
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/behaviorweave/
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Quickstart: quickstart.md
+      - Live examples: examples.md
+  - Concepts:
+      - Events: events.md
+      - Patterns: patterns.md
+      - Policies and decisions: policies.md
+      - State and concurrency: state.md
+  - Integrations:
+      - LangChain: integrations/langchain.md
+      - LangGraph: integrations/langgraph.md
+      - langgraph-xai: integrations/langgraph-xai.md
+      - MCP servers: integrations/mcp.md
+      - Compatibility: integrations/compatibility.md
+  - Guides:
+      - Custom patterns: guides/custom-patterns.md
+      - Testing policies: guides/testing.md
+      - Agent Skills: agent-skills.md
+  - API reference: api-reference.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Failure semantics: architecture/failure-strategy.md
+      - Security and privacy: security.md

@@ -1,20 +1,22 @@
+"""End-to-end MCP test: real stdio server, tool discovery, and server-side guarding."""
+
 from pathlib import Path
 
-import pytest
+from langchain.mcp import MCPAdapter
+
+SERVER = Path(__file__).parents[1] / "examples" / "local_alarm_mcp.py"
 
 
-@pytest.mark.asyncio
-async def test_local_mcp_tools_are_discovered_and_guarded():
-    from langchain.mcp import MCPAdapter
-
-    server = Path(__file__).parents[1] / "examples" / "local_alarm_mcp.py"
-    async with MCPAdapter(server) as adapter:
+async def test_local_mcp_tools_are_discovered_and_guarded() -> None:
+    async with MCPAdapter(SERVER) as adapter:
         tools = await adapter.list_tools()
         assert {tool.name for tool in tools} == {"get_alarm", "search_incident_history"}
         alarm = next(tool for tool in tools if tool.name == "get_alarm")
-        await alarm.ainvoke({"machine": "ETCH-3"})
-        nudge = await alarm.ainvoke({"machine": "ETCH-3"})
-        synthesis = await alarm.ainvoke({"machine": "ETCH-3"})
+        first = str(await alarm.ainvoke({"machine": "ETCH-3"}))
+        nudge = str(await alarm.ainvoke({"machine": "ETCH-3"}))
+        synthesis = str(await alarm.ainvoke({"machine": "ETCH-3"}))
 
-    assert "intervention=nudge" in str(nudge)
-    assert "intervention=force_synthesis" in str(synthesis)
+    assert "ETCH-3: chamber-pressure warning" in first
+    assert "[BehaviorWeave:" not in first
+    assert "[BehaviorWeave:nudge] Reuse this result" in nudge
+    assert "[BehaviorWeave:force_synthesis] Stop repeating this call" in synthesis

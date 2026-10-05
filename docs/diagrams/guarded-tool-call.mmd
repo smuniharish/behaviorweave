@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant Model as Chat model
+    participant Guard as Middleware
+    participant Engine as BehaviorEngine
+    participant Tool
+
+    Model->>Guard: get_alarm(machine="ETCH-3")
+    Guard->>Engine: process(tool_call)
+    Engine-->>Guard: decision
+    alt kind in block_on, or scope halted
+        Guard-->>Model: error: [BehaviorWeave:stop] ...
+        Note over Guard,Tool: the tool never runs
+    else any other decision
+        Guard->>Tool: run
+        Tool-->>Guard: result or failure
+        Guard->>Engine: process(outcome)
+        Engine-->>Guard: decision (blocking kinds halt)
+        Guard-->>Model: result + guidance if actionable
+    end

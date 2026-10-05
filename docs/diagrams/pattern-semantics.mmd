@@ -1,0 +1,22 @@
+flowchart TB
+    subgraph consecutive["ConsecutivePattern: repeated_tool_call"]
+        direction LR
+        c1["get_alarm(ETCH-3)<br/><b>1</b>"] --> c2["get_alarm(ETCH-3)<br/><b>2</b>"] --> c3["get_alarm(ETCH-4)<br/><b>1</b>"]
+    end
+
+    subgraph streak["StreakPattern: failure_streak"]
+        direction LR
+        s1["failure<br/><b>1</b>"] --> s2["failure<br/><b>2</b>"] --> s3["success<br/><b>0</b>"] --> s4["failure<br/><b>1</b>"]
+    end
+
+    subgraph oscillation["OscillationPattern: oscillation"]
+        direction LR
+        o1["A to B<br/><b>0</b>"] --> o2["B to A<br/><b>0</b>"] --> o3["A to B<br/><b>1</b>"] --> o4["B to A<br/><b>2</b>"]
+    end
+
+    subgraph frequency["FrequencyPattern: event_frequency"]
+        direction LR
+        f1["search(q)<br/><b>1</b>"] --> f2["fetch(id)<br/><b>1</b>"] --> f3["search(q)<br/><b>2</b>"]
+    end
+
+    consecutive ~~~ streak ~~~ oscillation ~~~ frequency
