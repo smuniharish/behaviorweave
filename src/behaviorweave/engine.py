@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from types import TracebackType
-from typing import Self
+from typing import Self, cast
 
 from ._util import freeze
 from .audit import AuditSink
-from .errors import PolicyConfigurationError
+from .errors import EventValidationError, PolicyConfigurationError
 from .events import BehaviorEvent
 from .interventions import AuditRecord, Intervention, InterventionDecision, InterventionType
 from .patterns import Pattern, PatternObservation, built_in_patterns
@@ -49,6 +50,8 @@ class BehaviorEngine:
     returns an unmarked `noop`.
 
     The engine is an async context manager: leaving the ``async with`` block calls `close`.
+    Process a batch with `process_many`, and release a finished conversation's history with
+    `expire_scope`.
 
     Args:
         policies: Rules mapping pattern thresholds to interventions.
@@ -173,7 +176,87 @@ class BehaviorEngine:
 
         Returns:
             The decision; its intervention is `noop` when no action is needed.
+
+        Raises:
+            EventValidationError: If ``event`` is not a ``BehaviorEvent``.
         """
+        if not isinstance(event, BehaviorEvent):
+            raise EventValidationError(f"event must be a BehaviorEvent, not {type(event).__name__}")
+        return await self._process(event)
+
+    async def process_many(
+        self, events: Iterable[BehaviorEvent], *, concurrency: int = 16
+    ) -> list[InterventionDecision]:
+        """Process a batch of events and return their decisions in input order.
+
+        Events of one scope are processed one after another, in input order, so every scope
+        sees the same history as with sequential `process` calls. Different scopes are
+        processed concurrently, at most ``concurrency`` at a time.
+
+        Every event is validated before any is processed. If processing fails, the remaining
+        work is cancelled and the first failure is raised; events processed before it keep
+        their effects, and because delivery is idempotent, the batch can be processed again.
+
+        Args:
+            events: The events to process.
+            concurrency: Maximum number of scopes processed at the same time.
+
+        Returns:
+            One decision per event, in the order of ``events``.
+
+        Raises:
+            EventValidationError: If an item is not a ``BehaviorEvent``.
+            PolicyConfigurationError: If ``concurrency`` is not a positive integer.
+        """
+        if isinstance(concurrency, bool) or not isinstance(concurrency, int) or concurrency < 1:
+            raise PolicyConfigurationError("concurrency must be a positive integer")
+        batch = list(events)
+        groups: dict[str, list[int]] = {}
+        for index, event in enumerate(batch):
+            if not isinstance(event, BehaviorEvent):
+                raise EventValidationError(
+                    f"events[{index}] must be a BehaviorEvent, not {type(event).__name__}"
+                )
+            groups.setdefault(event.scope, []).append(index)
+        decisions: list[InterventionDecision | None] = [None] * len(batch)
+        pending = iter(groups.values())
+
+        async def worker() -> None:
+            # Every worker draws whole scopes from one shared iterator, so a scope's events
+            # never run concurrently with each other.
+            for indexes in pending:
+                for index in indexes:
+                    decisions[index] = await self._process(batch[index])
+
+        try:
+            async with asyncio.TaskGroup() as group:
+                for _ in range(min(concurrency, len(groups))):
+                    group.create_task(worker())
+        except ExceptionGroup as failures:
+            raise failures.exceptions[0] from None
+        return cast("list[InterventionDecision]", decisions)
+
+    async def expire_scope(self, scope: str) -> int:
+        """Release a scope's behavioral history once its conversation or run has ended.
+
+        Removes every state of ``scope`` from the store: pattern counts, cooldowns, once-only
+        history, processed event IDs, and middleware halts. Events processed afterwards in
+        the same scope start from a clean history.
+
+        Args:
+            scope: The scope to release.
+
+        Returns:
+            The number of removed states.
+
+        Raises:
+            EventValidationError: If ``scope`` is not a non-empty string.
+        """
+        if not isinstance(scope, str) or not scope.strip():
+            raise EventValidationError("scope must be a non-empty string")
+        return await self.store.delete_scope(scope)
+
+    async def _process(self, event: BehaviorEvent) -> InterventionDecision:
         candidates: list[_Candidate] = []
         for pattern in self._active:
             if pattern.matches(event):

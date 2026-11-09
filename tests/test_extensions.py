@@ -156,11 +156,15 @@ class LooseStore(BehaviorStateStore):
     async def delete(self, key: str) -> None:
         self.states.pop(key, None)
 
+    async def delete_scope(self, scope: str) -> int:
+        return 0
+
 
 @pytest.mark.parametrize(
     ("test", "message"),
     [
         ("test_concurrent_updates_of_one_key_are_serialized", "after concurrent updates"),
+        ("test_delete_scope_removes_only_that_scope", "expected 2 removed states"),
         ("test_put_rejects_a_value_that_is_not_a_state", "put accepted a value"),
         ("test_update_rejects_a_result_that_is_not_a_state", "update accepted a result"),
     ],

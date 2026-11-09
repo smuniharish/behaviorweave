@@ -45,6 +45,9 @@ dependencies = [
   "langgraph>=1.2.20,<2",
 ]
 
+[project.optional-dependencies]
+otel = ["opentelemetry-api>=1.45.2,<2"]
+
 [project.urls]
 Homepage = "https://github.com/smuniharish/behaviorweave"
 Documentation = "https://behaviorweave.readthedocs.io/"
@@ -58,6 +61,7 @@ test = [
   "hypothesis>=6.170.15",
   "langchain[mcp]>=1.4.9,<2",
   "mcp>=2.3.0,<3",
+  "opentelemetry-sdk>=1.45.2,<2",
   "pytest>=9.2.0",
   "pytest-asyncio>=1.4.1.post1",
   "pytest-cov>=7.1.0",

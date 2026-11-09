@@ -105,8 +105,9 @@ intervention kinds. Configure the built-in pattern classes or subclass the `Patt
 | LangChain | Scope, block kinds, sync/async decision hook, formatter, middleware name. |
 | LangGraph | Host-owned routing/checkpoints, event adapters, BaseStore namespace and TTL. |
 | agxai | Config, registry, identity, plugins, custom capture, store, exporter, attribution, explanation, disclosure and capture policies. |
-| Audit | Async `AuditSink`, in-memory sink, and `AgxaiAuditSink` for semantic decisions. |
-| Storage | Async `BehaviorStateStore` ABC and PostgreSQL/Redis reference implementations. |
+| Audit | Async `AuditSink`, in-memory sink, `CompositeAuditSink` fan-out, and `AgxaiAuditSink` for semantic decisions. |
+| Metrics | `OpenTelemetryMetricsSink` counts decisions on any `MeterProvider` (`otel` extra). |
+| Storage | Async `BehaviorStateStore` ABC with scope release, and PostgreSQL/Redis reference implementations. |
 | MCP / Swarm / Deep Agents | Guards at real tool, delegation, and handoff boundaries. |
 
 See the [downstream inventory](https://behaviorweave.readthedocs.io/en/latest/integrations/compatibility/).
@@ -114,9 +115,9 @@ agxai is used for provenance and explanations; BehaviorWeave owns behavioral dec
 
 ## Examples and Agent Skills
 
-The [nineteen async examples](https://github.com/smuniharish/behaviorweave/tree/master/examples)
+The [twenty async examples](https://github.com/smuniharish/behaviorweave/tree/master/examples)
 cover middleware, MCP, graph loops, Swarm, Deep Agents, concurrent runs, durable databases,
-agxai semantic audit, and OpenTelemetry. Configure model credentials through environment
+agxai semantic audit, OpenTelemetry traces and metrics, and batch replay. Configure model credentials through environment
 variables; database/OTel examples support local Podman services.
 
 The [Agent Skills](https://github.com/smuniharish/behaviorweave/tree/master/behaviorweave-skills)

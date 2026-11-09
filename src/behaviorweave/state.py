@@ -162,7 +162,7 @@ class BehaviorStateStore(ABC):
 
     The engine advances state only through `update`; the other methods support inspection and
     lifecycle management. Subclass it to keep state in a durable or distributed backend and
-    implement `get`, `update`, `put`, and `delete`; `close` works as inherited.
+    implement `get`, `update`, `put`, `delete`, and `delete_scope`; `close` works as inherited.
     `behaviorweave.testing.BehaviorStateStoreContract` checks a store against this contract.
 
     A store must:
@@ -203,6 +203,18 @@ class BehaviorStateStore(ABC):
     @abstractmethod
     async def delete(self, key: str) -> None:
         """Remove the state stored under ``key``, if any."""
+
+    @abstractmethod
+    async def delete_scope(self, scope: str) -> int:
+        """Remove every state whose ``scope`` field equals ``scope``.
+
+        States written concurrently with the call may survive it; release a scope once its
+        conversation or run has ended.
+
+        Returns:
+            The number of removed states. Stores that cannot tell live from expired states
+            may count expired ones too.
+        """
 
     async def close(self) -> None:  # noqa: B027 - optional hook, no-op by default
         """Release resources held by the store. The default does nothing."""
@@ -282,24 +294,28 @@ class InMemoryBehaviorStateStore(BehaviorStateStore):
         with self._lock:
             self._states.pop(key, None)
 
-    async def clear(self, scope: str | None = None) -> int:
-        """Remove every state, or only the states of one ``scope``.
+    async def delete_scope(self, scope: str) -> int:
+        """Remove every state of ``scope``, releasing its behavioral history.
 
-        Call this when a conversation or run ends to release its behavioral history. Expired
-        states are dropped too, but only live states are counted.
+        Expired states of the scope are dropped too, but only live states are counted.
 
         Returns:
             The number of removed live states.
         """
         with self._lock:
-            now = self._clock()
-            if scope is None:
-                removed = list(self._states.values())
-                self._states.clear()
-            else:
-                keys = [key for key, (state, _) in self._states.items() if state.scope == scope]
-                removed = [self._states.pop(key) for key in keys]
-            return sum(1 for _, expires in removed if expires is None or expires > now)
+            keys = [key for key, (state, _) in self._states.items() if state.scope == scope]
+            return self._live([self._states.pop(key) for key in keys])
+
+    async def clear(self) -> int:
+        """Remove every state.
+
+        Returns:
+            The number of removed live states.
+        """
+        with self._lock:
+            removed = list(self._states.values())
+            self._states.clear()
+            return self._live(removed)
 
     async def purge_expired(self) -> int:
         """Remove every expired state immediately.
@@ -309,6 +325,10 @@ class InMemoryBehaviorStateStore(BehaviorStateStore):
         """
         with self._lock:
             return self._purge(self._clock())
+
+    def _live(self, entries: list[tuple[BehaviorState, datetime | None]]) -> int:
+        now = self._clock()
+        return sum(1 for _, expires in entries if expires is None or expires > now)
 
     def _load(self, key: str) -> BehaviorState | None:
         entry = self._states.get(key)

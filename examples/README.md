@@ -30,7 +30,7 @@ export OPENAI_BASE_URL="https://your-endpoint.example/v1"  # optional
 uv run python examples/01_langchain_agent.py
 ```
 
-Every example makes paid provider calls. `14_concurrency.py` runs one agent per worker
+Every example except `20_batch_replay.py` makes paid provider calls. `14_concurrency.py` runs one agent per worker
 (10 by default; set `BEHAVIORWEAVE_CONCURRENCY_CALLS` to change it).
 
 LangGraph Swarm and Deep Agents label assistant messages with the agent's name, which some
@@ -53,13 +53,14 @@ OpenAI-compatible endpoints reject; the multi-agent examples add `OmitMessageNam
 | [`10_oscillation.py`](10_oscillation.py) | LangGraph adapter | Detect and stop back-and-forth transfers. |
 | [`11_cooldown.py`](11_cooldown.py) | LangChain middleware | Cool down a nudge without muting escalation. |
 | [`12_policy_escalation.py`](12_policy_escalation.py) | LangChain middleware | Nudge, warn, request human review, then stop. |
-| [`13_multi_scope.py`](13_multi_scope.py) | LangChain middleware | Isolate behavioral history per conversation. |
+| [`13_multi_scope.py`](13_multi_scope.py) | LangChain middleware | Isolate behavioral history per conversation, then release it. |
 | [`14_concurrency.py`](14_concurrency.py) | LangChain middleware | One engine shared safely by concurrent agent runs. |
 | [`15_complete_agent_guard.py`](15_complete_agent_guard.py) | LangGraph + agxai | Guarded agent, semantic audit, and provenance-linked decisions. |
 | [`16_postgres_state_store.py`](16_postgres_state_store.py) | PostgreSQL | Two replicas sharing atomic, durable history. |
 | [`17_redis_state_store.py`](17_redis_state_store.py) | Redis | Distributed history with WATCH/MULTI updates. |
 | [`18_langgraph_store.py`](18_langgraph_store.py) | LangGraph BaseStore | Existing application storage, namespace, and TTL. |
-| [`19_agxai_opentelemetry.py`](19_agxai_opentelemetry.py) | agxai + OTel | Captured events, policy audit, and OTLP/HTTP export. |
+| [`19_agxai_opentelemetry.py`](19_agxai_opentelemetry.py) | agxai + OTel | Captured events, policy audit, decision metrics, and OTLP/HTTP export. |
+| [`20_batch_replay.py`](20_batch_replay.py) | Engine | Batch re-evaluation, fan-out audit, idempotent replay, scope release. |
 
 The shared helpers live in [`common.py`](common.py).
 
@@ -79,8 +80,9 @@ at production storage. Scripts use unique conversation IDs so repeated runs stay
 On Windows, the database examples use a selector event loop for psycopg.
 
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint, such as
-`http://127.0.0.1:4318`, for example 19. Without it, span names are printed.
-Use Jaeger directly or place an OTel Collector in front of it. Exporter credentials and TLS
+`http://127.0.0.1:4318`, for example 19. Without it, span names and decision counts are
+printed. The example exports traces and the `behaviorweave.decisions` metric, so send it to
+an OTel Collector, which accepts both. Exporter credentials and TLS
 settings use the standard OpenTelemetry environment variables.
 
 For Collector-to-Jaeger forwarding, put both containers on a dedicated network:
@@ -95,7 +97,7 @@ uv run python examples/19_agxai_opentelemetry.py
 ```
 
 Open `http://127.0.0.1:16686`, select `behaviorweave-example`, and inspect the `incident`
-trace. Insecure Collector-to-Jaeger transport is for this isolated local network only.
+trace. The Collector prints the decision counts: `podman logs bw-otel`. Insecure Collector-to-Jaeger transport is for this isolated local network only.
 Remove only these named containers when finished.
 
 ## Testing

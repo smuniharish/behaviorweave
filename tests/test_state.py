@@ -134,15 +134,15 @@ async def test_store_isolates_nested_metadata() -> None:
     assert again.metadata == {"payload": {"items": [1]}}
 
 
-async def test_store_clear_all_and_by_scope() -> None:
+async def test_store_delete_scope_and_clear() -> None:
     store = InMemoryBehaviorStateStore()
     await store.put("a1", _state(scope="a"))
     await store.put("a2", _state(scope="a"))
     await store.put("b1", _state(scope="b"))
-    assert await store.clear("a") == 2
+    assert await store.delete_scope("a") == 2
     assert await store.get("a1") is None
     assert await store.get("b1") is not None
-    assert await store.clear("missing") == 0
+    assert await store.delete_scope("missing") == 0
     assert await store.clear() == 1
     assert await store.get("b1") is None
 
@@ -154,7 +154,7 @@ async def test_clear_drops_expired_states_without_counting_them() -> None:
     await store.put("b-old", _state(scope="b"))
     clock.advance(seconds=11)
     await store.put("a-new", _state(scope="a"))
-    assert await store.clear("a") == 1
+    assert await store.delete_scope("a") == 1
     assert await store.clear() == 0
     assert store._states == {}
 

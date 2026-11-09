@@ -47,7 +47,12 @@ use a backend with atomic per-key transactions, such as the PostgreSQL/Redis
 Inject clients/pools and keep lifecycle ownership explicit.
 
 For in-memory audit, use `InMemoryAuditSink`. For agxai, pass `AgxaiAuditSink(runtime)`:
-inside an instrumented run, interventions become evidence and decisions.
+inside an instrumented run, interventions become evidence and decisions. Combine sinks with
+`CompositeAuditSink`, for example with `OpenTelemetryMetricsSink` for decision metrics.
+
+When a conversation ends, call `await engine.expire_scope(scope)` to release its history,
+including middleware halts. Replay recorded events with `await engine.process_many(events)`;
+keep their original event IDs so a retried batch is idempotent.
 
 ## agxai with an existing exporter
 

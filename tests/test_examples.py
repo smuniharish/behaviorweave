@@ -247,7 +247,11 @@ EXAMPLE_RUNS: dict[str, tuple[Responder, list[str], Callable[[str], None] | None
         ],
         None,
     ),
-    "13_multi_scope.py": (conversations, ["Conversation A"], conversation_b_is_unguided),
+    "13_multi_scope.py": (
+        conversations,
+        ["Conversation A", "Conversation A ended; released 1 behavior state(s)."],
+        conversation_b_is_unguided,
+    ),
     "14_concurrency.py": (
         fleet_worker,
         [
@@ -291,8 +295,21 @@ EXAMPLE_RUNS: dict[str, tuple[Responder, list[str], Callable[[str], None] | None
             "span: tool.execution",
             "span: execution.completed",
             "Answer:\nDone.",
+            "metric: behaviorweave.decisions tool_call -> warning: 1",
         ],
         None,
+    ),
+    "20_batch_replay.py": (
+        calls(),
+        [
+            "conversation-1 get_alarm: nudge",
+            "conversation-1 get_alarm: stop",
+            "Replay: 6 of 6 decisions marked duplicate.",
+            "Review queue: 12 audit records.",
+            "Interventions: {'nudge': 1, 'stop': 1}",
+            "Released conversation-1: 1 behavior state(s).",
+        ],
+        lambda output: assert_count(output, ": noop", 4),
     ),
 }
 

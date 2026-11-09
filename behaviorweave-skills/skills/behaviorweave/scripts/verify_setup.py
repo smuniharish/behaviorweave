@@ -22,7 +22,7 @@ REQUIRED = {
     "langgraph": ((1, 2, 20), (2,)),
     "agxai": ((1, 0, 2), (2,)),
 }
-OPTIONAL = ("langchain-openai", "deepagents", "langgraph-swarm", "mcp")
+OPTIONAL = ("langchain-openai", "deepagents", "langgraph-swarm", "mcp", "opentelemetry-api")
 
 failures: list[str] = []
 

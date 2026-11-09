@@ -4,6 +4,9 @@
 
 - `BehaviorEngine(*, policies=(), patterns=None, state_store=None, audit_sink=None)`
 - `await engine.process(event) -> InterventionDecision`
+- `await engine.process_many(events, *, concurrency=16) -> list[InterventionDecision]`:
+  input order; serial per scope, concurrent across scopes; validates every item first.
+- `await engine.expire_scope(scope) -> int` releases a finished scope's state.
 - `await engine.flush()`, `await engine.close()`, async context manager.
 - `PolicyRule(policy_id, pattern_id, threshold, intervention, ...)`: use keyword arguments
   for optional priority, cooldown, once-only, severity, and message settings.
@@ -15,10 +18,12 @@
 ## ABC extension points
 
 - `Pattern`: `pattern_id`, pure `matches(event)`, async `observe(event, store)`.
-- `BehaviorStateStore`: async `get`, `update(key, fn)`, `put`, `delete`; optional `close`.
+- `BehaviorStateStore`: async `get`, `update(key, fn)`, `put`, `delete`, `delete_scope(scope)`;
+  optional `close`.
 - `AuditSink`: async `write(record)`; optional `flush`, `close`.
 - `InMemoryAuditSink.records` inspects audit; async `clear` resets it.
-- `InMemoryBehaviorStateStore(ttl=None, *, clock=None)`: async `clear(scope=None)` and
+- `CompositeAuditSink(*sinks)` delivers to every sink and raises the first failure.
+- `InMemoryBehaviorStateStore(ttl=None, *, clock=None)`: async `clear()` and
   `purge_expired`, in addition to the store contract.
 
 The transform passed to `update` is synchronous and pure. An optimistic backend may invoke
@@ -47,6 +52,10 @@ The latter serializes updates only within one adapter instance; host owns backen
 - `AgxaiEventAdapter`, `AgxaiAuditSink(runtime)`.
 - `BehaviorWeaveObservability(engine, *, delegate=None, scope=thread_scope,
   on_decision=None, adapter=None)`.
+
+`behaviorweave.integrations.opentelemetry` (`otel` extra) exports
+`OpenTelemetryMetricsSink(*, meter_provider=None)`, counting decisions in the
+`behaviorweave.decisions` metric (`DECISIONS_METRIC`); scopes are never attributes.
 
 The observability hook receives `(canonical_event, decision)`; middleware's hook receives
 `(decision, behavior_event)`. Both may be async. Formatters remain synchronous.

@@ -226,7 +226,8 @@ class StoreMachine(RuleBasedStateMachine):
     def clear(self, scope: str | None) -> None:
         cleared = [key for key in self.model if scope is None or key[0] == scope]
         live = sum(1 for key in cleared if not self._expired(self.model[key][1]))
-        assert run_sync(self.store.clear(scope)) == live
+        removed = self.store.clear() if scope is None else self.store.delete_scope(scope)
+        assert run_sync(removed) == live
         for key in cleared:
             del self.model[key]
 

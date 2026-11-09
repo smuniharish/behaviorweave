@@ -6,7 +6,8 @@ Copy it into your application and adapt the table layout to your conventions.
 
 Each state is one JSONB row. ``update`` holds a transaction-scoped advisory lock on the key,
 so concurrent updates of one key are serialized across every process, including updates of a
-key that has no row yet. Expired rows are never returned and are overwritten in place.
+key that has no row yet. Expired rows are never returned and are overwritten in place. An
+expression index on the state's scope makes ``delete_scope`` an index lookup.
 
 psycopg's async connections need a selector event loop on Windows; run with
 ``asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)`` there.
@@ -51,6 +52,7 @@ class PostgresBehaviorStateStore(BehaviorStateStore):
             raise StateStoreError("ttl must be a positive timedelta")
         self._pool = pool
         self._table = sql.Identifier(table)
+        self._scope_index = sql.Identifier(f"{table}_scope_idx")
         self._ttl = ttl
         self._owns_pool = False
 
@@ -69,10 +71,13 @@ class PostgresBehaviorStateStore(BehaviorStateStore):
         return store
 
     async def setup(self) -> None:
-        """Create the state table if it does not exist."""
+        """Create the state table and its scope index if they do not exist."""
         await self._execute(
             "CREATE TABLE IF NOT EXISTS {table} ("
             "key text PRIMARY KEY, state jsonb NOT NULL, expires_at timestamptz)"
+        )
+        await self._execute(
+            "CREATE INDEX IF NOT EXISTS {scope_index} ON {table} ((state->>'scope'))"
         )
 
     async def truncate(self) -> None:
@@ -113,6 +118,21 @@ class PostgresBehaviorStateStore(BehaviorStateStore):
         """Remove the state stored under ``key``, if any."""
         await self._execute("DELETE FROM {table} WHERE key = %s", (key,))
 
+    async def delete_scope(self, scope: str) -> int:
+        """Remove every state of ``scope`` and return how many live states were removed."""
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                self._query(
+                    "WITH removed AS ("
+                    "DELETE FROM {table} WHERE state->>'scope' = %s RETURNING expires_at) "
+                    "SELECT count(*) FILTER (WHERE expires_at IS NULL OR expires_at > now()) "
+                    "FROM removed"
+                ),
+                (scope,),
+            )
+            row = await cursor.fetchone()
+        return 0 if row is None else int(row[0])
+
     async def close(self) -> None:
         """Close the connection pool if `connect` opened it."""
         if self._owns_pool:
@@ -133,4 +153,4 @@ class PostgresBehaviorStateStore(BehaviorStateStore):
             await connection.execute(self._query(statement), parameters)
 
     def _query(self, statement: LiteralString) -> sql.Composed:
-        return sql.SQL(statement).format(table=self._table)
+        return sql.SQL(statement).format(table=self._table, scope_index=self._scope_index)

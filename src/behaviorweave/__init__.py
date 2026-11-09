@@ -8,7 +8,7 @@ intervention decision for the host runtime to apply.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .audit import AuditSink, InMemoryAuditSink
+from .audit import AuditSink, CompositeAuditSink, InMemoryAuditSink
 from .engine import BehaviorEngine
 from .errors import (
     BehaviorWeaveError,
@@ -44,6 +44,7 @@ __all__ = [
     "BehaviorState",
     "BehaviorStateStore",
     "BehaviorWeaveError",
+    "CompositeAuditSink",
     "ConsecutivePattern",
     "EventType",
     "EventValidationError",

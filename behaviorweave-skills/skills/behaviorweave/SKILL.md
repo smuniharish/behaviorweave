@@ -33,8 +33,11 @@ applies them; the engine never secretly controls execution.
    - MCP: await processing inside async tool handlers.
    - agxai: `BehaviorWeaveObservability` or `AgxaiEventAdapter` for captured events;
      `AgxaiAuditSink` for semantic intervention records.
+   - Metrics: `OpenTelemetryMetricsSink` (`otel` extra); combine sinks with
+     `CompositeAuditSink`.
 6. Await lifecycle operations. Use `async with BehaviorEngine(...)` or `await engine.close()`.
-   Close application-owned agxai runtimes separately.
+   Close application-owned agxai runtimes separately. When a conversation ends, release its
+   history with `await engine.expire_scope(scope)`; replay batches with `process_many`.
 7. Copy [the policy tests](assets/test_behavior_policy.py), adapt them, and run tests plus
    the setup check again.
 

@@ -1,8 +1,8 @@
 # Live examples
 
 The [`examples/`](https://github.com/smuniharish/behaviorweave/tree/master/examples)
-directory contains nineteen single-file examples. Each drives a **real, provider-backed chat
-model** and applies BehaviorWeave at a real runtime boundary. Model wording varies between
+directory contains twenty single-file examples. All but the batch replay drive a **real,
+provider-backed chat model** and apply BehaviorWeave at a real runtime boundary. Model wording varies between
 runs; BehaviorWeave's guidance lines (`[BehaviorWeave:<kind>] ...`) are deterministic.
 
 ## Configure a model
@@ -63,13 +63,14 @@ environment variables and are never written anywhere.
 | `10_oscillation.py` | LangGraph adapter | Detect and stop back-and-forth transfers. |
 | `11_cooldown.py` | LangChain middleware | Cool down a nudge without muting escalation. |
 | `12_policy_escalation.py` | LangChain middleware | Nudge, warn, request human review, then stop. |
-| `13_multi_scope.py` | LangChain middleware | Isolate behavioral history per conversation. |
+| `13_multi_scope.py` | LangChain middleware | Isolate behavioral history per conversation, then release it. |
 | `14_concurrency.py` | LangChain middleware | One engine shared safely by concurrent agent runs. |
 | `15_complete_agent_guard.py` | LangGraph + agxai | Guarded agent, provenance capture, and a provenance-linked audit. |
 | `16_postgres_state_store.py` | PostgreSQL | Shared atomic history across replicas. |
 | `17_redis_state_store.py` | Redis | WATCH/MULTI updates and shared history. |
 | `18_langgraph_store.py` | LangGraph BaseStore | Existing storage, namespace, and TTL. |
-| `19_agxai_opentelemetry.py` | agxai + OTel | Captured execution spans exported via OTLP/HTTP. |
+| `19_agxai_opentelemetry.py` | agxai + OTel | Execution spans and decision metrics exported via OTLP/HTTP. |
+| `20_batch_replay.py` | Engine | Batch re-evaluation, fan-out audit, idempotent replay, and scope release. |
 
 ## What a run looks like
 

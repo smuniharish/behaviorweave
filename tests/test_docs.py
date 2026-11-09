@@ -145,6 +145,7 @@ def test_every_public_symbol_is_in_the_api_reference() -> None:
         "behaviorweave.integrations.langchain",
         "behaviorweave.integrations.langgraph",
         "behaviorweave.integrations.agxai",
+        "behaviorweave.integrations.opentelemetry",
         "behaviorweave.testing",
     ]
     missing = [

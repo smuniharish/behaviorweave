@@ -107,6 +107,30 @@ print(first.duplicate, again.duplicate)  # False True
 
 Reuse an ID only when redelivering the same observation.
 
+## Batch processing
+
+`process_many` processes a batch, such as recorded events replayed through new policies, and
+returns the decisions in input order. Events of one scope are processed one at a time in
+their batch order; different scopes run concurrently, at most `concurrency` at once
+(16 by default). Every item is validated before any is processed.
+
+```python
+batch = [
+    BehaviorEvent.tool_call(
+        "wipe", {"db": "prod"}, scope="ops", event_id="ops-1"
+    ),
+    BehaviorEvent.tool_call(
+        "wipe", {"db": "dev"}, scope="dev", event_id="dev-1"
+    ),
+]
+decisions = await engine.process_many(batch, concurrency=4)
+print([d.intervention.kind.value for d in decisions])  # ['stop', 'stop']
+```
+
+If an event fails, `process_many` raises that error after cancelling the other in-flight scopes.
+Events processed before the failure keep their effect, so retry the whole batch with the
+same event IDs: the processed events are recognized as duplicates.
+
 ## Serialization
 
 `to_dict()` and `to_json()` produce stable, JSON-safe representations. Metadata that is not

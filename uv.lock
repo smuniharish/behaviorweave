@@ -124,12 +124,18 @@ dependencies = [
     { name = "langgraph" },
 ]
 
+[package.optional-dependencies]
+otel = [
+    { name = "opentelemetry-api" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "agxai", extra = ["otel"] },
     { name = "hypothesis" },
     { name = "langchain", extra = ["mcp"] },
     { name = "mcp" },
+    { name = "opentelemetry-sdk" },
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -162,6 +168,7 @@ test = [
     { name = "hypothesis" },
     { name = "langchain", extra = ["mcp"] },
     { name = "mcp" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -177,7 +184,9 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.4.9,<2" },
     { name = "langchain-core", specifier = ">=1.7.6,<2" },
     { name = "langgraph", specifier = ">=1.2.20,<2" },
+    { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.45.2,<2" },
 ]
+provides-extras = ["otel"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -185,6 +194,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.170.15" },
     { name = "langchain", extras = ["mcp"], specifier = ">=1.4.9,<2" },
     { name = "mcp", specifier = ">=2.3.0,<3" },
+    { name = "opentelemetry-sdk", specifier = ">=1.45.2,<2" },
     { name = "pyrefly", specifier = ">=1.4.1" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
@@ -215,6 +225,7 @@ test = [
     { name = "hypothesis", specifier = ">=6.170.15" },
     { name = "langchain", extras = ["mcp"], specifier = ">=1.4.9,<2" },
     { name = "mcp", specifier = ">=2.3.0,<3" },
+    { name = "opentelemetry-sdk", specifier = ">=1.45.2,<2" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

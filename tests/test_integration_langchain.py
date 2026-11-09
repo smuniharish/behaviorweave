@@ -337,7 +337,7 @@ async def test_blocking_outcome_decisions_halt_the_scope_until_released() -> Non
 
 
 async def test_halts_live_in_the_engine_store() -> None:
-    engine, store = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
+    engine, _ = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
     middleware = BehaviorWeaveMiddleware(engine)
     assert await middleware.halted("thread-1") is None
     await _wrap(middleware, tool_request(call_id="c1"), _failing)
@@ -359,8 +359,11 @@ async def test_halts_live_in_the_engine_store() -> None:
 
     assert await restarted.release("thread-1")
     assert await middleware.halted("thread-1") is None
-    await store.clear("thread-1")
-    assert not await middleware.release("thread-1"), "clearing a scope removes its halt"
+    await _wrap(middleware, tool_request(call_id="c4"), _failing)
+    assert await middleware.halted("thread-1") is not None
+    assert await engine.expire_scope("thread-1") >= 2, "the halt and the pattern state"
+    assert await middleware.halted("thread-1") is None, "expiring a scope removes its halt"
+    assert await other.halted("thread-1") is None
 
 
 def test_sync_path_shares_halts_with_the_async_path() -> None:

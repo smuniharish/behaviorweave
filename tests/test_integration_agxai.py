@@ -512,7 +512,7 @@ async def test_observability_scope_hooks_flush_and_close() -> None:
     await observability.close()
     assert scopes == ["th-1"]
     assert [d.intervention.kind for d in decisions] == [InterventionType.NUDGE]
-    assert await store.clear("fixed") == 1, "events are scoped by the resolver"
+    assert await store.delete_scope("fixed") == 1, "events are scoped by the resolver"
     threadless = replace_context(thread_id=None)
     assert thread_scope(ExecutionStartedEvent(context=threadless, sequence=0)) == str(
         threadless.run_id

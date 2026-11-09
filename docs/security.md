@@ -27,7 +27,7 @@ contain the full event, including its metadata, and their retention is up to you
 - **Choose scopes deliberately.** A scope is an isolation boundary. Include the tenant in
   multi-tenant scopes, for example `"tenant-7:thread-42"`.
 - **Treat the in-memory store as process-local.** It is not a durable or shared security
-  boundary. Release finished conversations with `clear(scope)` or a `ttl`.
+  boundary. Release finished conversations with `await engine.expire_scope(scope)` or a `ttl`.
 - **Keep credentials in the environment.** The examples read provider credentials only from
   environment variables; `.env` files are git-ignored.
 - **No code execution from configuration.** Policies are plain data. Serialized states are

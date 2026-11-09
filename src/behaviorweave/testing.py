@@ -240,6 +240,49 @@ class BehaviorStateStoreContract(_Contract, ABC):
 
         self._run(scenario)
 
+    def test_delete_scope_removes_only_that_scope(self) -> None:
+        """``delete_scope`` removes every state of one scope, counts them, and keeps others."""
+
+        async def scenario(store: BehaviorStateStore) -> None:
+            scope, other = f"contract-{uuid4().hex}", f"contract-{uuid4().hex}"
+            first, second, kept = _key(), _key(), _key()
+            await store.put(first, _rich_state(scope))
+            await store.update(second, lambda _: _rich_state(scope))
+            await store.put(kept, _rich_state(other))
+            removed = await store.delete_scope(scope)
+            _check(removed == 2, f"expected 2 removed states, got {removed!r}")
+            for key in (first, second):
+                fetched = await store.get(key)
+                _check(fetched is None, f"expected None after delete_scope, got {fetched!r}")
+            fetched = await store.get(kept)
+            _check(fetched == _rich_state(other), "delete_scope changed another scope's state")
+            again = await store.delete_scope(scope)
+            _check(again == 0, f"expected 0 for an empty scope, got {again!r}")
+            await store.put(first, _rich_state(scope))
+            fetched = await store.get(first)
+            _check(fetched == _rich_state(scope), "a released scope cannot be written again")
+
+        self._run(scenario)
+
+    def test_delete_scope_follows_the_current_scope_of_a_key(self) -> None:
+        """A key rewritten with another scope's state belongs to that scope only."""
+
+        async def scenario(store: BehaviorStateStore) -> None:
+            scope, other = f"contract-{uuid4().hex}", f"contract-{uuid4().hex}"
+            moved, dropped = _key(), _key()
+            await store.put(moved, _rich_state(scope))
+            await store.put(moved, _rich_state(other))
+            await store.update(dropped, lambda _: _rich_state(scope))
+            await store.delete(dropped)
+            removed = await store.delete_scope(scope)
+            _check(removed == 0, f"expected 0 removed states, got {removed!r}")
+            fetched = await store.get(moved)
+            _check(fetched == _rich_state(other), "delete_scope removed another scope's state")
+            removed = await store.delete_scope(other)
+            _check(removed == 1, f"expected 1 removed state, got {removed!r}")
+
+        self._run(scenario)
+
     def _run(self, scenario: Callable[[BehaviorStateStore], Awaitable[None]]) -> None:
         async def body() -> None:
             store = await self.make_store()

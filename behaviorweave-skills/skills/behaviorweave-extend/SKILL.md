@@ -27,6 +27,8 @@ metadata:
 - Optimistic retries may re-run `fn`; only its final result commits.
 - Invalid values raise `StateStoreError` without replacing valid state.
 - Returned state is detached; expired data is never returned.
+- `delete_scope(scope)` removes exactly the states whose current `scope` field matches,
+  including keys rewritten from another scope, and returns how many it removed.
 - Custom patterns preserve cooldowns/emissions and deduplicate retained event IDs.
 - Audit sinks implement `async write(record)` and optional async flush/close.
 - The LangGraph store adapter has instance-local locks, not distributed transactions.

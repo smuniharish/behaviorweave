@@ -21,6 +21,8 @@ Override `run_scenario` if the driver needs a particular event loop.
 Reference PostgreSQL/Redis stores and live contract tests are in the
 [repository](https://github.com/smuniharish/behaviorweave/tree/master/examples).
 Validate expiry separately and inject independent backend clients to test replica races.
+For `delete_scope`, keep a scope index or query on the stored `scope` field; an index must
+follow a key whose state moves to another scope.
 
 ## Pattern
 

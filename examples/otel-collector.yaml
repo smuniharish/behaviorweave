@@ -8,6 +8,8 @@ processors:
   batch: {}
 
 exporters:
+  debug:
+    verbosity: detailed
   otlp_grpc/jaeger:
     endpoint: bw-jaeger:4317
     tls:
@@ -19,3 +21,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp_grpc/jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

@@ -155,3 +155,8 @@ engine = BehaviorEngine(
 (await engine.process(BehaviorEvent.tool_call("sync", scope="s")))
 print(sink.records[0].decision.intervention.kind.value)  # noop
 ```
+
+To deliver every record to several sinks, such as a review queue and
+[decision metrics](../../integrations/opentelemetry.md#decision-metrics), wrap them in a
+[`CompositeAuditSink`](../../api/index.md#behaviorweave.CompositeAuditSink). It writes, flushes,
+and closes every sink even when one fails, then raises the first failure.

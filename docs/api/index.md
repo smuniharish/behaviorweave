@@ -10,6 +10,8 @@ without notice.
 
 ::: behaviorweave.AuditSink
 
+::: behaviorweave.CompositeAuditSink
+
 ::: behaviorweave.InMemoryAuditSink
 
 ::: behaviorweave.__version__
@@ -100,6 +102,10 @@ without notice.
     options:
       heading_level: 4
 
+::: behaviorweave.integrations.langgraph.LangGraphBehaviorStateStore
+    options:
+      heading_level: 4
+
 ### agxai
 
 `from behaviorweave.integrations.agxai import ...`
@@ -109,20 +115,44 @@ without notice.
       heading_level: 4
 
 ::: behaviorweave.integrations.agxai.create_agxai_runtime
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.instrument_graph
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.AgxaiAuditSink
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.BehaviorWeaveObservability
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.DecisionHook
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.ScopeResolver
+    options:
+      heading_level: 4
 
 ::: behaviorweave.integrations.agxai.thread_scope
+    options:
+      heading_level: 4
 
-::: behaviorweave.integrations.langgraph.LangGraphBehaviorStateStore
+### OpenTelemetry
+
+`from behaviorweave.integrations.opentelemetry import ...` Requires the `otel` extra: `pip install "behaviorweave[otel]"`.
+
+::: behaviorweave.integrations.opentelemetry.OpenTelemetryMetricsSink
+    options:
+      heading_level: 4
+
+::: behaviorweave.integrations.opentelemetry.DECISIONS_METRIC
+    options:
+      heading_level: 4
 
 ## Extension contracts
 

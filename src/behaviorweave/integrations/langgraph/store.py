@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from langgraph.store.base import BaseStore
+from langgraph.store.base import BaseStore, PutOp
 
 from ...errors import PolicyConfigurationError, StateStoreError
 from ...state import BehaviorState, BehaviorStateStore
@@ -17,6 +17,7 @@ from ...state import BehaviorState, BehaviorStateStore
 __all__ = ["LangGraphBehaviorStateStore"]
 
 _STRIPES = 64
+_PAGE = 100
 
 
 class LangGraphBehaviorStateStore(BehaviorStateStore):
@@ -113,6 +114,26 @@ class LangGraphBehaviorStateStore(BehaviorStateStore):
     async def delete(self, key: str) -> None:
         """Remove the state stored under ``key``, if any."""
         await self.store.adelete(self.namespace, key)
+
+    async def delete_scope(self, scope: str) -> int:
+        """Remove every state of ``scope`` in ``namespace``.
+
+        Returns:
+            The number of removed states, counting expired states the store still holds.
+        """
+        removed = skipped = 0
+        while True:
+            items = await self.store.asearch(
+                self.namespace, filter={"scope": scope}, limit=_PAGE, offset=skipped
+            )
+            own = [item.key for item in items if tuple(item.namespace) == self.namespace]
+            # Searches match nested namespaces too; those items are not ours, so page past them.
+            skipped += len(items) - len(own)
+            if own:
+                await self.store.abatch([PutOp(self.namespace, key, None) for key in own])
+                removed += len(own)
+            if len(items) < _PAGE:
+                return removed
 
 
 async def _acquire(lock: threading.Lock) -> None:
