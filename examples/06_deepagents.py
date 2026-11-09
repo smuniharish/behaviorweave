@@ -8,6 +8,8 @@ Run:
     uv run python examples/06_deepagents.py
 """
 
+import asyncio
+
 from deepagents import create_deep_agent
 
 from behaviorweave import BehaviorEngine
@@ -22,7 +24,7 @@ from common import (
 )
 
 
-def main() -> None:
+async def main() -> None:
     engine = BehaviorEngine(policies=repeat_guard_policies())
     agent = create_deep_agent(
         model=create_model(),
@@ -30,7 +32,7 @@ def main() -> None:
         system_prompt=SYSTEM_PROMPT,
         middleware=[BehaviorWeaveMiddleware(engine)],
     )
-    result = ask(
+    result = await ask(
         agent,
         "Investigate the ETCH-3 pressure alarm. Check the alarm twice to confirm it, review "
         "the incident history, and recommend a next action.",
@@ -40,4 +42,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

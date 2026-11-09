@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from skills_ref import read_properties, validate
 
 import behaviorweave
@@ -14,8 +16,9 @@ import behaviorweave
 ROOT = Path(__file__).resolve().parents[1]
 DISTRIBUTION = ROOT / "behaviorweave-skills"
 SKILL = DISTRIBUTION / "skills" / "behaviorweave"
+SKILLS = sorted((DISTRIBUTION / "skills").iterdir())
 LINK = re.compile(r"\]\(([^)#<>\s]+)(?:#[^)]*)?\)")
-# langsmith, a LangChain dependency, still calls this Python 3.14 deprecation when imported.
+# Match the upstream import-time warning filter used by the package test configuration.
 STRICT_WARNINGS = [
     "-W",
     "error",
@@ -36,18 +39,19 @@ def run(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_the_skill_follows_the_agent_skills_specification() -> None:
-    properties = read_properties(SKILL)
+@pytest.mark.parametrize("skill", SKILLS, ids=lambda path: path.name)
+def test_the_skill_follows_the_agent_skills_specification(skill: Path) -> None:
+    properties = read_properties(skill)
 
-    assert validate(SKILL) == []
-    assert properties.name == SKILL.name
+    assert validate(skill) == []
+    assert properties.name == skill.name
     assert properties.license == "Apache-2.0"
     assert properties.metadata["version"] == behaviorweave.__version__
-    assert len((SKILL / "SKILL.md").read_text(encoding="utf-8").splitlines()) < 500
+    assert len((skill / "SKILL.md").read_text(encoding="utf-8").splitlines()) < 500
 
 
 def test_references_are_one_level_deep_and_every_relative_link_resolves() -> None:
-    assert all(path.is_file() for path in (SKILL / "references").iterdir())
+    assert all(path.is_file() for skill in SKILLS for path in (skill / "references").iterdir())
     for page in DISTRIBUTION.rglob("*.md"):
         for target in LINK.findall(page.read_text(encoding="utf-8")):
             if "://" not in target:
@@ -71,3 +75,14 @@ def test_the_policy_test_template_passes(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "7 passed" in completed.stdout
+
+
+def test_discovery_paths_and_evaluation_cases() -> None:
+    discovery = json.loads((ROOT / "skills.sh.json").read_text(encoding="utf-8"))
+    assert discovery["paths"] == ["./behaviorweave-skills/skills"]
+    cases = json.loads((DISTRIBUTION / "validation" / "evals.json").read_text(encoding="utf-8"))
+    assert {case["skill"] for case in cases} == {skill.name for skill in SKILLS}
+    for skill in SKILLS:
+        selected = [case for case in cases if case["skill"] == skill.name]
+        assert {case["activate"] for case in selected} == {True, False}
+        assert all(case["prompt"] and case["expected"] for case in selected)

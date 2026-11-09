@@ -9,6 +9,7 @@ from langchain.agents.middleware import ToolCallRequest
 from langchain.messages import ToolMessage
 
 from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
+from behaviorweave._sync import run_sync
 from behaviorweave.integrations.langchain import BehaviorWeaveMiddleware
 from support import tool_request
 
@@ -119,7 +120,9 @@ class HaltMachine(RuleBasedStateMachine):
     @rule(scope=SCOPES)
     def release(self, scope: str) -> None:
         model = self.models[scope]
-        assert self.middleware.release(scope) is model.halted
+        assert run_sync(self.middleware.release(scope)) is model.halted
+        halted = run_sync(self.middleware.halted(scope))
+        assert halted is None
         model.halted = False
 
 

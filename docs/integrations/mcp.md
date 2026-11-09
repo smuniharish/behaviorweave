@@ -30,9 +30,9 @@ engine = BehaviorEngine(
 
 
 @mcp.tool()
-def get_alarm(machine: str) -> str:
+async def get_alarm(machine: str) -> str:
     """Return the current alarm for a machine."""
-    decision = engine.process(
+    decision = await engine.process(
         BehaviorEvent.tool_call(
             "get_alarm", {"machine": machine}, scope="mcp-session"
         )
@@ -54,7 +54,7 @@ clients; derive the scope from a client or session identifier to isolate clients
 
 A complete local server lives in
 [`examples/local_alarm_mcp.py`](https://github.com/smuniharish/behaviorweave/blob/master/examples/local_alarm_mcp.py),
-and [`02_langchain_mcp_live.py`](../examples.md) connects a LangChain agent to it with
+and [`02_langchain_mcp_live.py`](../examples/index.md) connects a LangChain agent to it with
 `langchain.mcp.MCPAdapter`. The test suite runs the same server over stdio to verify tool
 discovery and guarded responses.
 

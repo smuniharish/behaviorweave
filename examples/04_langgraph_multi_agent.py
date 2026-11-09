@@ -12,6 +12,8 @@ Run:
 
 from __future__ import annotations
 
+import asyncio
+
 from langchain.agents import create_agent
 from langchain.tools import tool
 
@@ -43,35 +45,35 @@ adapter = LangGraphEventAdapter()
 model = create_model()
 
 
-def delegate(specialist: str, role: str, question: str) -> str:
+async def delegate(specialist: str, role: str, question: str) -> str:
     """Run one specialist unless BehaviorWeave intervenes."""
-    decision = engine.process(adapter.delegation("supervisor", specialist, scope=SCOPE))
+    decision = await engine.process(adapter.delegation("supervisor", specialist, scope=SCOPE))
     if decision.actionable:
         return default_guidance(decision)
     agent = create_agent(model, [], system_prompt=f"You are the {specialist}, {role}. Be brief.")
-    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": question}]})
     return result["messages"][-1].text
 
 
 @tool
-def ask_researcher(question: str) -> str:
+async def ask_researcher(question: str) -> str:
     """Ask the researcher to gather incident evidence."""
-    return delegate("researcher", "an incident evidence specialist", question)
+    return await delegate("researcher", "an incident evidence specialist", question)
 
 
 @tool
-def ask_analyst(question: str) -> str:
+async def ask_analyst(question: str) -> str:
     """Ask the analyst for a root-cause assessment."""
-    return delegate("analyst", "a root-cause analysis specialist", question)
+    return await delegate("analyst", "a root-cause analysis specialist", question)
 
 
 @tool
-def ask_writer(question: str) -> str:
+async def ask_writer(question: str) -> str:
     """Ask the writer to draft operator communication."""
-    return delegate("writer", "an operations communication specialist", question)
+    return await delegate("writer", "an operations communication specialist", question)
 
 
-def main() -> None:
+async def main() -> None:
     supervisor = create_agent(
         model,
         [ask_researcher, ask_analyst, ask_writer],
@@ -80,7 +82,7 @@ def main() -> None:
             "instructions; follow them exactly."
         ),
     )
-    result = ask(
+    result = await ask(
         supervisor,
         "Produce an ETCH-3 pressure incident report. Ask the researcher twice in a row for "
         "evidence, then consult the analyst and the writer once each.",
@@ -90,4 +92,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

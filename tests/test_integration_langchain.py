@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,7 @@ from langgraph.types import Command, interrupt
 
 from behaviorweave import (
     AuditRecord,
+    AuditSink,
     BehaviorEngine,
     BehaviorEvent,
     EventType,
@@ -25,6 +27,7 @@ from behaviorweave import (
     Outcome,
     PolicyRule,
 )
+from behaviorweave._sync import run_sync
 from behaviorweave.integrations.langchain import (
     BehaviorWeaveMiddleware,
     LangChainEventAdapter,
@@ -36,6 +39,19 @@ from support import RecordingStore, ScriptedChatModel, tool_call, tool_request
 
 def _ok(request: ToolCallRequest) -> ToolMessage:
     return ToolMessage(content="ok", tool_call_id=request.tool_call["id"] or "")
+
+
+async def _wrap(
+    middleware: BehaviorWeaveMiddleware,
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+) -> ToolMessage | Command[Any]:
+    """Run ``handler`` through the async middleware path."""
+
+    async def ahandler(request: ToolCallRequest) -> ToolMessage | Command[Any]:
+        return handler(request)
+
+    return await middleware.awrap_tool_call(request, ahandler)
 
 
 def _engine(*rules: PolicyRule) -> tuple[BehaviorEngine, RecordingStore]:
@@ -69,14 +85,14 @@ def test_adapter_builds_normalized_events() -> None:
     assert adapter.retry(scope="s").event_id
 
 
-def test_default_guidance_prefers_the_policy_message() -> None:
+async def test_default_guidance_prefers_the_policy_message() -> None:
     engine, _ = _engine(PolicyRule("n", "repeated_tool_call", 1, InterventionType.NUDGE))
-    decision = engine.process(BehaviorEvent.tool_call("t", scope="s"))
+    decision = await engine.process(BehaviorEvent.tool_call("t", scope="s"))
     assert default_guidance(decision) == "[BehaviorWeave:nudge] 't' occurred 1 consecutive time"
     engine, _ = _engine(
         PolicyRule("n", "repeated_tool_call", 1, InterventionType.NUDGE, message="Reuse it.")
     )
-    decision = engine.process(BehaviorEvent.tool_call("t", scope="s"))
+    decision = await engine.process(BehaviorEvent.tool_call("t", scope="s"))
     assert default_guidance(decision) == "[BehaviorWeave:nudge] Reuse it."
 
 
@@ -130,7 +146,7 @@ def test_middleware_records_failures_and_reraises() -> None:
     assert third.content == "boom\n[BehaviorWeave:escalate] 3 consecutive failure outcomes"
 
 
-def test_middleware_appends_guidance_to_content_blocks_and_skips_commands() -> None:
+async def test_middleware_appends_guidance_to_content_blocks_and_skips_commands() -> None:
     engine, _ = _engine(PolicyRule("n", "repeated_tool_call", 1, InterventionType.NUDGE))
     middleware = BehaviorWeaveMiddleware(engine, track_outcomes=False)
 
@@ -143,44 +159,46 @@ def test_middleware_appends_guidance_to_content_blocks_and_skips_commands() -> N
     def command(request: ToolCallRequest) -> Command[Any]:
         return Command(goto="elsewhere")
 
-    result = middleware.wrap_tool_call(tool_request(call_id="c1"), blocks)
+    result = await _wrap(middleware, tool_request(call_id="c1"), blocks)
     assert isinstance(result, ToolMessage)
     guidance = "[BehaviorWeave:nudge] 'get_alarm' occurred 1 consecutive time"
     assert result.content[-1] == {"type": "text", "text": guidance}
-    second = middleware.wrap_tool_call(tool_request(call_id="c2", args={"machine": "B"}), empty)
+    second = await _wrap(middleware, tool_request(call_id="c2", args={"machine": "B"}), empty)
     assert isinstance(second, ToolMessage)
     assert isinstance(second.content, str)
     assert second.content.startswith("[BehaviorWeave:nudge]")
-    goto = middleware.wrap_tool_call(tool_request(call_id="c3", args={"machine": "C"}), command)
+    goto = await _wrap(middleware, tool_request(call_id="c3", args={"machine": "C"}), command)
     assert isinstance(goto, Command)
 
 
-def test_middleware_scope_resolution() -> None:
+async def test_middleware_scope_resolution() -> None:
     engine, store = _engine(PolicyRule("n", "repeated_tool_call", 99, InterventionType.NUDGE))
-    BehaviorWeaveMiddleware(engine, scope="fixed").wrap_tool_call(tool_request(), _ok)
-    BehaviorWeaveMiddleware(engine, scope=lambda r: f"tool:{r.tool_call['name']}").wrap_tool_call(
-        tool_request(), _ok
+    await _wrap(BehaviorWeaveMiddleware(engine, scope="fixed"), tool_request(), _ok)
+    await _wrap(
+        BehaviorWeaveMiddleware(engine, scope=lambda r: f"tool:{r.tool_call['name']}"),
+        tool_request(),
+        _ok,
     )
-    BehaviorWeaveMiddleware(engine).wrap_tool_call(tool_request(thread_id="t-9"), _ok)
+    await _wrap(BehaviorWeaveMiddleware(engine), tool_request(thread_id="t-9"), _ok)
     assert {scope for (scope, _, _) in store.latest} == {"fixed", "tool:get_alarm", "t-9"}
     with pytest.raises(EventValidationError, match="needs a scope"):
-        BehaviorWeaveMiddleware(engine).wrap_tool_call(tool_request(thread_id=None), _ok)
+        await _wrap(BehaviorWeaveMiddleware(engine), tool_request(thread_id=None), _ok)
 
 
-def test_middleware_event_ids_survive_replays() -> None:
+async def test_middleware_event_ids_survive_replays() -> None:
     engine, store = _engine(PolicyRule("n", "repeated_tool_call", 99, InterventionType.NUDGE))
     middleware = BehaviorWeaveMiddleware(engine, track_outcomes=False)
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _ok)
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _ok)
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _ok)
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _ok)
     assert store.count("thread-1", "repeated_tool_call") == 1, "replayed step is deduplicated"
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1, 2, 3]), _ok)
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1, 2, 3]), _ok)
     assert store.count("thread-1", "repeated_tool_call") == 2, "reused ID in a later turn counts"
-    middleware.wrap_tool_call(tool_request(call_id=None), _ok)
-    middleware.wrap_tool_call(tool_request(call_id="c9", state=object()), _ok)
+    await _wrap(middleware, tool_request(call_id=None), _ok)
+    await _wrap(middleware, tool_request(call_id="c9", state=object()), _ok)
     assert store.count("thread-1", "repeated_tool_call") == 4
 
 
-def test_middleware_hooks_formatter_block_list_and_name() -> None:
+async def test_middleware_hooks_formatter_block_list_and_name() -> None:
     engine, _ = _engine(PolicyRule("warn", "repeated_tool_call", 1, InterventionType.WARNING))
     seen: list[tuple[str, EventType]] = []
 
@@ -189,12 +207,13 @@ def test_middleware_hooks_formatter_block_list_and_name() -> None:
 
     middleware = BehaviorWeaveMiddleware(
         engine,
-        block_on=["warning"],  # type: ignore[list-item]
+        # pyrefly: ignore[bad-argument-type]
+        block_on=["warning"],
         on_decision=hook,
         formatter=lambda d: f"custom:{d.intervention.policy}",
         name="guard",
     )
-    result = middleware.wrap_tool_call(tool_request(), _ok)
+    result = await _wrap(middleware, tool_request(), _ok)
     assert isinstance(result, ToolMessage)
     assert result.content == "custom:warn"
     assert seen == [("warning", EventType.TOOL_CALL)]
@@ -283,7 +302,7 @@ def _failing(request: ToolCallRequest) -> ToolMessage:
     return ToolMessage(content="boom", tool_call_id=request.tool_call["id"] or "", status="error")
 
 
-def test_blocking_outcome_decisions_halt_the_scope_until_released() -> None:
+async def test_blocking_outcome_decisions_halt_the_scope_until_released() -> None:
     engine, _ = _engine(
         PolicyRule("halt", "failure_streak", 2, InterventionType.STOP, message="Stop now.")
     )
@@ -294,34 +313,62 @@ def test_blocking_outcome_decisions_halt_the_scope_until_released() -> None:
         calls.append(request.tool_call["id"] or "")
         return _failing(request)
 
-    def call(call_id: str, machine: str, scope: str = "thread-1") -> ToolMessage:
-        result = middleware.wrap_tool_call(
-            tool_request(call_id=call_id, args={"machine": machine}, thread_id=scope), failing
+    async def call(call_id: str, machine: str, scope: str = "thread-1") -> ToolMessage:
+        result = await _wrap(
+            middleware,
+            tool_request(call_id=call_id, args={"machine": machine}, thread_id=scope),
+            failing,
         )
         assert isinstance(result, ToolMessage)
         return result
 
-    assert call("c1", "A").content == "boom"
-    assert call("c2", "B").content == "boom\n[BehaviorWeave:stop] Stop now."
-    halted = call("c3", "C")
+    assert (await call("c1", "A")).content == "boom"
+    assert (await call("c2", "B")).content == "boom\n[BehaviorWeave:stop] Stop now."
+    halted = await call("c3", "C")
     assert (halted.content, halted.status) == ("[BehaviorWeave:stop] Stop now.", "error")
-    assert call("c4", "A", scope="thread-2").content == "boom", "other scopes are unaffected"
+    assert (await call("c4", "A", scope="thread-2")).content == "boom", (
+        "other scopes are unaffected"
+    )
     assert calls == ["c1", "c2", "c4"]
-    assert middleware.release("thread-1")
-    assert not middleware.release("thread-1")
-    assert call("c5", "D").content == "boom\n[BehaviorWeave:stop] Stop now."
+    assert await middleware.release("thread-1")
+    assert not await middleware.release("thread-1")
+    assert (await call("c5", "D")).content == "boom\n[BehaviorWeave:stop] Stop now."
     assert calls == ["c1", "c2", "c4", "c5"]
 
 
-def test_halts_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(middleware_module, "_MAX_HALTED_SCOPES", 2)
+async def test_halts_live_in_the_engine_store() -> None:
+    engine, store = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
+    middleware = BehaviorWeaveMiddleware(engine)
+    assert await middleware.halted("thread-1") is None
+    await _wrap(middleware, tool_request(call_id="c1"), _failing)
+    halt = await middleware.halted("thread-1")
+    assert halt is not None
+    assert (halt.intervention.kind, halt.intervention.policy) == (InterventionType.STOP, "halt")
+
+    # Another instance with the same name, such as a restarted worker, sees the same halt.
+    restarted = BehaviorWeaveMiddleware(engine)
+    refused = await _wrap(restarted, tool_request(call_id="c2", messages=[1, 2, 3]), _ok)
+    assert isinstance(refused, ToolMessage)
+    assert refused.status == "error"
+    # Differently named instances halt independently.
+    other = BehaviorWeaveMiddleware(engine, name="other")
+    assert await other.halted("thread-1") is None
+    allowed = await _wrap(other, tool_request(call_id="c3", messages=[1, 2, 3, 4]), _ok)
+    assert isinstance(allowed, ToolMessage)
+    assert allowed.status == "success"
+
+    assert await restarted.release("thread-1")
+    assert await middleware.halted("thread-1") is None
+    await store.clear("thread-1")
+    assert not await middleware.release("thread-1"), "clearing a scope removes its halt"
+
+
+def test_sync_path_shares_halts_with_the_async_path() -> None:
     engine, _ = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
     middleware = BehaviorWeaveMiddleware(engine)
-    for scope in ("a", "b", "c"):
-        middleware.wrap_tool_call(tool_request(thread_id=scope), _failing)
-    assert not middleware.release("a"), "the oldest halt was forgotten"
-    assert middleware.release("b")
-    assert middleware.release("c")
+    middleware.wrap_tool_call(tool_request(call_id="c1"), _failing)
+    assert run_sync(middleware.halted("thread-1")) is not None
+    assert run_sync(middleware.release("thread-1"))
 
 
 def test_graph_interrupts_are_not_failures() -> None:
@@ -348,12 +395,12 @@ async def test_async_graph_interrupts_are_not_failures() -> None:
     assert store.count("thread-1", "failure_streak") == 0
 
 
-def test_retried_tool_calls_record_their_new_outcome() -> None:
+async def test_retried_tool_calls_record_their_new_outcome() -> None:
     engine, store = _engine(PolicyRule("outage", "failure_streak", 9, InterventionType.ESCALATE))
     middleware = BehaviorWeaveMiddleware(engine)
-    middleware.wrap_tool_call(tool_request(call_id="c1"), _failing)
+    await _wrap(middleware, tool_request(call_id="c1"), _failing)
     assert store.count("thread-1", "failure_streak") == 1
-    middleware.wrap_tool_call(tool_request(call_id="c1"), _ok)
+    await _wrap(middleware, tool_request(call_id="c1"), _ok)
     assert store.count("thread-1", "failure_streak") == 0, "the retry's success resets the streak"
 
 
@@ -423,7 +470,7 @@ def test_tools_that_interrupt_record_only_their_final_outcome() -> None:
     assert store.count("refunds", "failure_streak") == 0
 
 
-def test_a_halting_call_is_not_blocked_by_its_own_halt_when_replayed() -> None:
+async def test_a_halting_call_is_not_blocked_by_its_own_halt_when_replayed() -> None:
     engine, _ = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
     middleware = BehaviorWeaveMiddleware(engine)
     calls: list[str] = []
@@ -432,9 +479,9 @@ def test_a_halting_call_is_not_blocked_by_its_own_halt_when_replayed() -> None:
         calls.append(request.tool_call["id"] or "")
         return _failing(request)
 
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), failing)
-    replay = middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), failing)
-    other = middleware.wrap_tool_call(tool_request(call_id="c2", messages=[1, 2, 3]), failing)
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), failing)
+    replay = await _wrap(middleware, tool_request(call_id="c1", messages=[1]), failing)
+    other = await _wrap(middleware, tool_request(call_id="c2", messages=[1, 2, 3]), failing)
     assert calls == ["c1", "c1"], "the replayed halting call runs; a new call is refused"
     assert isinstance(replay, ToolMessage)
     assert replay.content == "boom\n[BehaviorWeave:stop] 1 consecutive failure outcome"
@@ -442,18 +489,18 @@ def test_a_halting_call_is_not_blocked_by_its_own_halt_when_replayed() -> None:
     assert other.status == "error"
 
 
-def test_redelivered_outcomes_do_not_halt_again_after_release() -> None:
+async def test_redelivered_outcomes_do_not_halt_again_after_release() -> None:
     engine, _ = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
     middleware = BehaviorWeaveMiddleware(engine)
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _failing)
-    assert middleware.release("thread-1")
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _failing)
-    assert not middleware.release("thread-1")
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _failing)
+    assert await middleware.release("thread-1")
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _failing)
+    assert not await middleware.release("thread-1")
 
 
 @pytest.mark.parametrize("rerun_fails", [True, False])
 @pytest.mark.parametrize("release", [True, False])
-def test_outcome_pauses_wait_for_the_host_to_release_the_halt(
+async def test_outcome_pauses_wait_for_the_host_to_release_the_halt(
     release: bool, rerun_fails: bool
 ) -> None:
     runs: list[str] = []
@@ -488,11 +535,13 @@ def test_outcome_pauses_wait_for_the_host_to_release_the_halt(
     )
     agent = create_agent(model, [flaky], middleware=[middleware], checkpointer=InMemorySaver())
     config: RunnableConfig = {"configurable": {"thread_id": "ops"}}
-    paused = agent.invoke({"messages": [{"role": "user", "content": "Run both jobs."}]}, config)
+    paused = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "Run both jobs."}]}, config
+    )
     assert "__interrupt__" in paused
     if release:
-        assert middleware.release("ops"), "the operator approved"
-    result = agent.invoke(Command(resume="approved"), config)
+        assert await middleware.release("ops"), "the operator approved"
+    result = await agent.ainvoke(Command(resume="approved"), config)
 
     contents = [m.content for m in result["messages"] if isinstance(m, ToolMessage)]
     guidance = "[BehaviorWeave:pause] 1 consecutive failure outcome"
@@ -504,24 +553,25 @@ def test_outcome_pauses_wait_for_the_host_to_release_the_halt(
         assert (contents[1], runs) == ("b: done", ["a", "a", "b"])
     else:
         assert (contents[1], runs) == (guidance, ["a", "a"]), "the scope stays halted"
-    assert middleware.release("ops") is not release
+    assert await middleware.release("ops") is not release
 
 
 @pytest.mark.parametrize("once_only", [False, True])
 def test_recovered_blocking_outcomes_still_halt(once_only: bool) -> None:
     failures = iter([OSError("audit backend down")])
 
-    def flaky_sink(record: AuditRecord) -> None:
-        if record.decision.intervention.kind is InterventionType.STOP:
-            error = next(failures, None)
-            if error is not None:
-                raise error
+    class FlakySink(AuditSink):
+        async def write(self, record: AuditRecord) -> None:
+            if record.decision.intervention.kind is InterventionType.STOP:
+                error = next(failures, None)
+                if error is not None:
+                    raise error
 
     engine = BehaviorEngine(
         policies=[
             PolicyRule("halt", "failure_streak", 1, InterventionType.STOP, once_only=once_only)
         ],
-        audit_sink=flaky_sink,
+        audit_sink=FlakySink(),
     )
     middleware = BehaviorWeaveMiddleware(engine)
     calls: list[str] = []
@@ -563,15 +613,29 @@ def test_parallel_halting_calls_are_each_exempt_on_replay() -> None:
     assert call("c3", _failing).startswith("[BehaviorWeave:pause]"), "new calls are refused"
 
 
-def test_halt_origins_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_halt_origins_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(middleware_module, "_MAX_HALT_ORIGINS", 1)
     engine, _ = _engine(PolicyRule("halt", "failure_streak", 1, InterventionType.STOP))
     middleware = BehaviorWeaveMiddleware(engine)
-    middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _failing)
-    assert middleware.release("thread-1")
-    middleware.wrap_tool_call(tool_request(call_id="c2", messages=[1, 2, 3]), _failing)
-    replay = middleware.wrap_tool_call(tool_request(call_id="c1", messages=[1]), _failing)
+    await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _failing)
+    assert await middleware.release("thread-1")
+    await _wrap(middleware, tool_request(call_id="c2", messages=[1, 2, 3]), _failing)
+    replay = await _wrap(middleware, tool_request(call_id="c1", messages=[1]), _failing)
     assert isinstance(replay, ToolMessage)
     assert replay.content == "[BehaviorWeave:stop] 2 consecutive failure outcomes", (
         "the forgotten origin is no longer exempt from the active halt"
     )
+
+
+async def test_async_decision_hooks_are_awaited() -> None:
+    engine, _ = _engine(PolicyRule("warn", "repeated_tool_call", 1, InterventionType.WARNING))
+    seen: list[str] = []
+
+    async def hook(decision: InterventionDecision, event: BehaviorEvent) -> None:
+        await asyncio.sleep(0)
+        seen.append(decision.intervention.kind.value)
+
+    middleware = BehaviorWeaveMiddleware(engine, on_decision=hook)
+    await _wrap(middleware, tool_request(), _ok)
+    middleware.wrap_tool_call(tool_request(call_id="c2", messages=[1, 2]), _ok)
+    assert seen == ["warning", "noop", "warning", "noop"]

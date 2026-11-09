@@ -59,11 +59,13 @@ def test_rule_validation(kwargs: dict[str, object], message: str) -> None:
         **kwargs,
     }
     with pytest.raises(PolicyConfigurationError, match=message):
-        PolicyRule(**fields)  # type: ignore[arg-type]
+        # pyrefly: ignore[bad-argument-type]
+        PolicyRule(**fields)
 
 
 def test_rule_coerces_intervention_strings() -> None:
-    rule = PolicyRule("r", "p", 1, "stop")  # type: ignore[arg-type]
+    # pyrefly: ignore[bad-argument-type]
+    rule = PolicyRule("r", "p", 1, "stop")
     assert rule.intervention is InterventionType.STOP
     assert rule.intervention.is_terminal
     assert not InterventionType.NUDGE.is_terminal
@@ -71,7 +73,8 @@ def test_rule_coerces_intervention_strings() -> None:
 
 def test_engine_rejects_invalid_rule_sets() -> None:
     with pytest.raises(PolicyConfigurationError, match="expected PolicyRule"):
-        PolicyEngine(["not a rule"])  # type: ignore[list-item]
+        # pyrefly: ignore[bad-argument-type]
+        PolicyEngine(["not a rule"])
     rule = PolicyRule("dup", "p", 1, InterventionType.NUDGE)
     with pytest.raises(PolicyConfigurationError, match="duplicate policy_id"):
         PolicyEngine([rule, PolicyRule("dup", "q", 2, InterventionType.STOP)])

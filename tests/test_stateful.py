@@ -1,4 +1,8 @@
-"""Stateful model-based tests: the engine and the store against independent reference models."""
+"""Stateful model-based tests: the engine and the store against independent reference models.
+
+Hypothesis runs rules synchronously, so each rule drives the async API through the same bridge
+that ``BehaviorWeaveMiddleware.wrap_tool_call`` uses.
+"""
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -17,6 +21,7 @@ from behaviorweave import (
     Outcome,
     PolicyRule,
 )
+from behaviorweave._sync import run_sync
 from support import ManualClock, at
 
 COOLDOWN = timedelta(seconds=30)
@@ -74,7 +79,7 @@ class EngineMachine(RuleBasedStateMachine):
         model = self.models[scope]
         model.tool_run = model.tool_run + 1 if event.fingerprint == model.tool_fingerprint else 1
         model.tool_fingerprint = event.fingerprint
-        decision = self.engine.process(event)
+        decision = run_sync(self.engine.process(event))
         if model.tool_run >= 4:
             self._check(decision, InterventionType.STOP)
         elif model.tool_run >= 2:
@@ -91,7 +96,7 @@ class EngineMachine(RuleBasedStateMachine):
     def report_outcome(self, scope: str, outcome: Outcome) -> Sent:
         event = BehaviorEvent.outcome_event(outcome, scope=scope, timestamp=at(self.seconds))
         model = self.models[scope]
-        decision = self.engine.process(event)
+        decision = run_sync(self.engine.process(event))
         if outcome is Outcome.FAILURE:
             model.failures += 1
         elif outcome is Outcome.SUCCESS:
@@ -126,14 +131,14 @@ class EngineMachine(RuleBasedStateMachine):
         bounced = len(history) >= 2 and identity == history[-2] and identity != history[-1]
         model.bounces = model.bounces + 1 if bounced else 0
         history.append(identity)
-        decision = self.engine.process(event)
+        decision = run_sync(self.engine.process(event))
         expected = InterventionType.WARNING if model.bounces >= 2 else InterventionType.NOOP
         self._check(decision, expected)
         return Sent(event, matched=True, decision=decision)
 
     @rule(previous=sent)
     def redeliver(self, previous: Sent) -> None:
-        decision = self.engine.process(previous.event)
+        decision = run_sync(self.engine.process(previous.event))
         assert decision.duplicate is previous.matched
         if previous.decision.actionable:
             assert decision == replace(previous.decision, duplicate=True)
@@ -190,7 +195,7 @@ class StoreMachine(RuleBasedStateMachine):
     @rule(key=KEYS, count=st.integers(0, 3))
     def put(self, key: str, count: int) -> None:
         state = BehaviorState("p", key[0], count=count)
-        self.store.put(key, state)
+        run_sync(self.store.put(key, state))
         self._write(key, state)
 
     @rule(key=KEYS)
@@ -203,32 +208,32 @@ class StoreMachine(RuleBasedStateMachine):
             base = existing if existing is not None else BehaviorState("p", key[0])
             return replace(base, count=base.count + 1, version=base.version + 1)
 
-        result = self.store.update(key, bump)
+        result = run_sync(self.store.update(key, bump))
         assert received == [current], "update sees the live state, or None once it expired"
         assert result == bump(current)
         self._write(key, result)
 
     @rule(key=KEYS)
     def get(self, key: str) -> None:
-        assert self.store.get(key) == self._live(key)
+        assert run_sync(self.store.get(key)) == self._live(key)
 
     @rule(key=KEYS)
     def delete(self, key: str) -> None:
-        self.store.delete(key)
+        run_sync(self.store.delete(key))
         self.model.pop(key, None)
 
     @rule(scope=st.none() | st.sampled_from("ab"))
     def clear(self, scope: str | None) -> None:
         cleared = [key for key in self.model if scope is None or key[0] == scope]
         live = sum(1 for key in cleared if not self._expired(self.model[key][1]))
-        assert self.store.clear(scope) == live
+        assert run_sync(self.store.clear(scope)) == live
         for key in cleared:
             del self.model[key]
 
     @rule()
     def purge_expired(self) -> None:
         expected = self._purge()
-        assert self.store.purge_expired() == expected
+        assert run_sync(self.store.purge_expired()) == expected
 
 
 TestStoreMachine = StoreMachine.TestCase

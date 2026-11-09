@@ -52,7 +52,8 @@ def test_defaults_are_generated() -> None:
 
 
 def test_string_enum_values_are_coerced() -> None:
-    event = BehaviorEvent("outcome", scope="s", outcome="failure")  # type: ignore[arg-type]
+    # pyrefly: ignore[bad-argument-type]
+    event = BehaviorEvent("outcome", scope="s", outcome="failure")
     assert event.event_type is EventType.OUTCOME
     assert event.outcome is Outcome.FAILURE
 
@@ -76,7 +77,8 @@ def test_string_enum_values_are_coerced() -> None:
 def test_invalid_fields_raise(kwargs: dict[str, object], message: str) -> None:
     fields: dict[str, object] = {"event_type": EventType.CUSTOM, "scope": "s", **kwargs}
     with pytest.raises(EventValidationError, match=message) as info:
-        BehaviorEvent(**fields)  # type: ignore[arg-type]
+        # pyrefly: ignore[bad-argument-type]
+        BehaviorEvent(**fields)
     assert isinstance(info.value, ValueError)
     assert isinstance(info.value, BehaviorWeaveError)
 
@@ -87,9 +89,11 @@ def test_event_is_immutable_and_metadata_is_isolated() -> None:
     source["k"] = "changed"
     assert event.metadata == {"k": "v"}
     with pytest.raises(TypeError):
-        event.metadata["k"] = "x"  # type: ignore[index]
+        # pyrefly: ignore[unsupported-operation]
+        event.metadata["k"] = "x"
     with pytest.raises(FrozenInstanceError):
-        event.scope = "other"  # type: ignore[misc]
+        # pyrefly: ignore[read-only]
+        event.scope = "other"
     assert repr(event.metadata) == "{'k': 'v'}"
 
 
@@ -154,7 +158,8 @@ def test_tool_call_records_arguments_and_context() -> None:
 @pytest.mark.parametrize("name", ["", "  ", None])
 def test_tool_call_requires_a_tool_name(name: object) -> None:
     with pytest.raises(EventValidationError, match="tool_name"):
-        BehaviorEvent.tool_call(name, scope="s")  # type: ignore[arg-type]
+        # pyrefly: ignore[bad-argument-type]
+        BehaviorEvent.tool_call(name, scope="s")
 
 
 def test_explicit_empty_event_id_is_rejected_not_replaced() -> None:

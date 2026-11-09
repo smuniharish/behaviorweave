@@ -1,5 +1,6 @@
-"""LangGraph integration: event adapter for nodes, tools, outcomes, and multi-agent activity."""
+"""LangGraph integration: event adapter and ``BaseStore``-backed behavior state."""
 
 from .adapter import LangGraphEventAdapter
+from .store import LangGraphBehaviorStateStore
 
-__all__ = ["LangGraphEventAdapter"]
+__all__ = ["LangGraphBehaviorStateStore", "LangGraphEventAdapter"]

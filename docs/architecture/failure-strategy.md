@@ -5,15 +5,15 @@ evidence, and never executes an intervention on its own.
 
 ## Error hierarchy
 
-Every exception derives from [`BehaviorWeaveError`][behaviorweave.BehaviorWeaveError]. Each
+Every exception derives from [`BehaviorWeaveError`](../api/index.md#behaviorweave.BehaviorWeaveError). Each
 concrete error is also a `ValueError`, because it always reports invalid input or
 configuration.
 
 | Exception | Raised when |
 | --- | --- |
-| [`EventValidationError`][behaviorweave.EventValidationError] | An event has an empty scope or event ID, a naive timestamp, or an unknown event type or outcome; an adapter receives an unusable payload; the middleware cannot determine a scope. |
-| [`PolicyConfigurationError`][behaviorweave.PolicyConfigurationError] | A rule or pattern is invalid, IDs repeat, or a policy references a pattern the engine does not provide. Raised at construction time. |
-| [`StateStoreError`][behaviorweave.StateStoreError] | A state is invalid (for example, a negative count), cannot be deserialized, or a store receives a value that is not a `BehaviorState`. |
+| [`EventValidationError`](../api/index.md#behaviorweave.EventValidationError) | An event has an empty scope or event ID, a naive timestamp, or an unknown event type or outcome; an adapter receives an unusable payload; the middleware cannot determine a scope. |
+| [`PolicyConfigurationError`](../api/index.md#behaviorweave.PolicyConfigurationError) | A rule or pattern is invalid, IDs repeat, or a policy references a pattern the engine does not provide. Raised at construction time. |
+| [`StateStoreError`](../api/index.md#behaviorweave.StateStoreError) | A state is invalid (for example, a negative count), cannot be deserialized, or a store receives a value that is not a `BehaviorState`. |
 
 ```python
 from behaviorweave import (

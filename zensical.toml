@@ -1,0 +1,93 @@
+[project]
+site_name = "BehaviorWeave"
+site_description = "Async behavioral policies and interventions for LangGraph and LangChain agents."
+site_url = "https://behaviorweave.readthedocs.io/en/latest/"
+repo_name = "smuniharish/behaviorweave"
+repo_url = "https://github.com/smuniharish/behaviorweave"
+edit_uri = "edit/master/docs/"
+copyright = "Copyright &copy; BehaviorWeave contributors. Apache-2.0."
+extra_css = ["stylesheets/extra.css"]
+exclude_docs = "/.ruff.toml"
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    { "Installation" = "getting-started/index.md" },
+    { "Quickstart" = "getting-started/quickstart.md" },
+  ] },
+  { "User guide" = [
+    { "Concepts" = [
+      { "Events" = "guide/concepts/events.md" },
+      { "Patterns" = "guide/concepts/patterns.md" },
+      { "Policies" = "guide/concepts/policies.md" },
+      { "State and concurrency" = "guide/concepts/state.md" },
+    ] },
+    { "How-to" = [
+      { "Custom patterns" = "guide/how-to/custom-patterns.md" },
+      { "Testing" = "guide/how-to/testing.md" },
+    ] },
+    { "Troubleshooting" = "guide/troubleshooting.md" },
+  ] },
+  { "Integrations" = [
+    { "LangChain" = "integrations/langchain.md" },
+    { "LangGraph" = "integrations/langgraph.md" },
+    { "agxai" = "integrations/agxai.md" },
+    { "MCP" = "integrations/mcp.md" },
+    { "LangSmith" = "integrations/langsmith.md" },
+    { "Langfuse" = "integrations/langfuse.md" },
+    { "OpenTelemetry" = "integrations/opentelemetry.md" },
+    { "Compatibility" = "integrations/compatibility.md" },
+  ] },
+  { "Examples" = "examples/index.md" },
+  { "Architecture" = [
+    { "Overview" = "architecture/overview.md" },
+    { "Failure strategy" = "architecture/failure-strategy.md" },
+  ] },
+  { "Agent Skills" = "agent-skills/index.md" },
+  { "Security" = "security.md" },
+  { "Benchmarks" = "benchmarks.md" },
+  { "API reference" = "api/index.md" },
+  { "Project" = "project.md" },
+]
+
+[project.validation]
+invalid_links = true
+invalid_link_anchors = true
+unresolved_references = true
+unresolved_footnotes = true
+
+[project.theme]
+font = false
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
+icon.repo = "fontawesome/brands/github"
+features = [
+  "content.action.edit", "content.code.copy", "content.tabs.link",
+  "navigation.footer", "navigation.sections", "navigation.tabs", "navigation.top",
+  "navigation.tracking", "search.highlight", "search.suggest", "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/weather-night"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/weather-sunny"
+toggle.name = "Switch to light mode"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = false
+show_signature_annotations = true
+show_root_heading = true
+heading_level = 3

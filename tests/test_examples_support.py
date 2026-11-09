@@ -3,6 +3,7 @@
 import importlib
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 from langchain.agents import create_agent
@@ -50,13 +51,13 @@ def test_repeat_guard_policies(common: ModuleType) -> None:
     assert (stop.threshold, stop.intervention) == (3, InterventionType.STOP)
 
 
-def test_operations_tools(common: ModuleType) -> None:
+async def test_operations_tools(common: ModuleType) -> None:
     alarm, history = common.OPERATIONS_TOOLS
-    assert "chamber-pressure warning" in alarm.invoke({"machine": "ETCH-3"})
-    assert "pressure drift" in history.invoke({"machine": "ETCH-3"})
+    assert "chamber-pressure warning" in await alarm.ainvoke({"machine": "ETCH-3"})
+    assert "pressure drift" in await history.ainvoke({"machine": "ETCH-3"})
 
 
-def test_guarded_agent_and_transcript(
+async def test_guarded_agent_and_transcript(
     common: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
     model = ScriptedChatModel(
@@ -71,7 +72,7 @@ def test_guarded_agent_and_transcript(
     )
     engine = BehaviorEngine(policies=common.repeat_guard_policies())
     agent = common.guarded_agent(engine, model=model)
-    common.print_run(common.ask(agent, "Inspect ETCH-3.", thread_id="t-1"))
+    common.print_run(await common.ask(agent, "Inspect ETCH-3.", thread_id="t-1"))
     output = capsys.readouterr().out
     assert output.count("-> get_alarm({'machine': 'ETCH-3'})") == 3
     assert "[BehaviorWeave:nudge] You already have this result" in output
@@ -84,12 +85,12 @@ class RecordingModel(ScriptedChatModel):
 
     calls: list[list[BaseMessage]] = Field(default_factory=list)
 
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def, override]
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls.append(list(messages))
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
-def _named_agent(common: ModuleType, *middleware: AgentMiddleware) -> tuple[RecordingModel, object]:
+def _named_agent(common: ModuleType, *middleware: AgentMiddleware) -> tuple[RecordingModel, Any]:
     model = RecordingModel(
         calls=[],
         messages=iter(
@@ -104,20 +105,14 @@ def _author_names(messages: list[BaseMessage]) -> set[str | None]:
     return {message.name for message in messages if message.type != "tool"}
 
 
-def test_named_agents_label_their_messages(common: ModuleType) -> None:
+async def test_named_agents_label_their_messages(common: ModuleType) -> None:
     model, agent = _named_agent(common)
-    agent.invoke({"messages": [{"role": "user", "content": "Inspect ETCH-3."}]})  # type: ignore[attr-defined]
+    await agent.ainvoke({"messages": [{"role": "user", "content": "Inspect ETCH-3."}]})
     assert "alarm_agent" in _author_names(model.calls[-1])
 
 
-def test_omit_message_names_strips_author_names(common: ModuleType) -> None:
+async def test_omit_message_names_strips_author_names(common: ModuleType) -> None:
     model, agent = _named_agent(common, common.OmitMessageNames())
-    agent.invoke({"messages": [{"role": "user", "content": "Inspect ETCH-3."}]})  # type: ignore[attr-defined]
+    await agent.ainvoke({"messages": [{"role": "user", "content": "Inspect ETCH-3."}]})
     assert any(message.type == "tool" for message in model.calls[-1])
-    assert _author_names(model.calls[-1]) == {None}
-
-
-async def test_omit_message_names_async(common: ModuleType) -> None:
-    model, agent = _named_agent(common, common.OmitMessageNames())
-    await agent.ainvoke({"messages": [{"role": "user", "content": "Inspect ETCH-3."}]})  # type: ignore[attr-defined]
     assert _author_names(model.calls[-1]) == {None}

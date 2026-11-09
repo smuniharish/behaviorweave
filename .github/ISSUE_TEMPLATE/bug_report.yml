@@ -50,7 +50,7 @@ body:
       description: >
         A minimal, self-contained script that reproduces the issue: the policies, the events
         (with fixed timestamps when cooldowns matter), and the decision you received. For agent
-        issues, the integration you use (BehaviorWeaveMiddleware, an adapter, or langgraph-xai).
+        issues, the integration you use (BehaviorWeaveMiddleware, an adapter, or agxai).
       render: python
     validations:
       required: true
@@ -68,4 +68,4 @@ body:
       label: Additional context
       description: >
         Anything else that might be relevant, such as your operating system and your LangChain,
-        LangGraph, and langgraph-xai versions.
+        LangGraph, and agxai versions.

@@ -55,13 +55,53 @@ OpenAI-compatible endpoints reject; the multi-agent examples add `OmitMessageNam
 | [`12_policy_escalation.py`](12_policy_escalation.py) | LangChain middleware | Nudge, warn, request human review, then stop. |
 | [`13_multi_scope.py`](13_multi_scope.py) | LangChain middleware | Isolate behavioral history per conversation. |
 | [`14_concurrency.py`](14_concurrency.py) | LangChain middleware | One engine shared safely by concurrent agent runs. |
-| [`15_complete_agent_guard.py`](15_complete_agent_guard.py) | LangGraph + langgraph-xai | Guarded agent, provenance capture, and a provenance-linked audit. |
+| [`15_complete_agent_guard.py`](15_complete_agent_guard.py) | LangGraph + agxai | Guarded agent, semantic audit, and provenance-linked decisions. |
+| [`16_postgres_state_store.py`](16_postgres_state_store.py) | PostgreSQL | Two replicas sharing atomic, durable history. |
+| [`17_redis_state_store.py`](17_redis_state_store.py) | Redis | Distributed history with WATCH/MULTI updates. |
+| [`18_langgraph_store.py`](18_langgraph_store.py) | LangGraph BaseStore | Existing application storage, namespace, and TTL. |
+| [`19_agxai_opentelemetry.py`](19_agxai_opentelemetry.py) | agxai + OTel | Captured events, policy audit, and OTLP/HTTP export. |
 
 The shared helpers live in [`common.py`](common.py).
+
+## Local services
+
+```powershell
+podman run -d --name bw-postgres -p 55432:5432 -e POSTGRES_PASSWORD=postgres docker.io/library/postgres:18-alpine
+podman run -d --name bw-redis -p 56379:6379 docker.io/library/redis:8-alpine
+$env:BEHAVIORWEAVE_POSTGRES_URL = "postgresql://postgres:postgres@127.0.0.1:55432/postgres"
+$env:BEHAVIORWEAVE_REDIS_URL = "redis://127.0.0.1:56379/0"
+uv run pytest tests/test_reference_stores.py tests/test_examples.py -m "not live"
+```
+
+The database credentials above are for local disposable test services only.
+Reference-store contracts truncate their dedicated test table/key prefix: never point them
+at production storage. Scripts use unique conversation IDs so repeated runs stay isolated.
+On Windows, the database examples use a selector event loop for psycopg.
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint, such as
+`http://127.0.0.1:4318`, for example 19. Without it, span names are printed.
+Use Jaeger directly or place an OTel Collector in front of it. Exporter credentials and TLS
+settings use the standard OpenTelemetry environment variables.
+
+For Collector-to-Jaeger forwarding, put both containers on a dedicated network:
+
+```powershell
+podman network create bw-net
+podman run -d --name bw-jaeger --network bw-net -p 16686:16686 docker.io/jaegertracing/jaeger:2.17.0
+$config = (Resolve-Path examples\otel-collector.yaml).Path
+podman run -d --name bw-otel --network bw-net -p 4318:4318 -v "${config}:/etc/otelcol/config.yaml:ro" docker.io/otel/opentelemetry-collector:latest
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4318"
+uv run python examples/19_agxai_opentelemetry.py
+```
+
+Open `http://127.0.0.1:16686`, select `behaviorweave-example`, and inspect the `incident`
+trace. Insecure Collector-to-Jaeger transport is for this isolated local network only.
+Remove only these named containers when finished.
 
 ## Testing
 
 The repository's test suite runs every example offline on each change: a rule-based chat
 model stands in for the provider, and the tests check the BehaviorWeave guidance each example
-prints. To run the examples against your endpoint through the test suite as well, set
+prints. Database examples require the service URLs above and are skipped otherwise.
+To run the examples against your endpoint through the test suite as well, set
 `BEHAVIORWEAVE_LIVE_TESTS=1` with the variables above and run `uv run pytest -m live`.

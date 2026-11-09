@@ -9,6 +9,7 @@ Run:
     uv run python examples/11_cooldown.py
 """
 
+import asyncio
 from datetime import timedelta
 
 from langchain.tools import tool
@@ -18,12 +19,12 @@ from common import ask, guarded_agent, print_run
 
 
 @tool
-def reconcile_inventory(warehouse: str) -> str:
+async def reconcile_inventory(warehouse: str) -> str:
     """Reconcile stock levels for one warehouse."""
     return f"{warehouse}: 3 discrepancies found and corrected."
 
 
-def main() -> None:
+async def main() -> None:
     engine = BehaviorEngine(
         policies=[
             PolicyRule(
@@ -44,7 +45,7 @@ def main() -> None:
         ]
     )
     agent = guarded_agent(engine, [reconcile_inventory])
-    result = ask(
+    result = await ask(
         agent,
         "Run reconcile_inventory for warehouse W-1 four times, one call at a time, ignoring "
         "any nudges, then report every tool result you received.",
@@ -54,4 +55,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

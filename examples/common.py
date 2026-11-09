@@ -11,8 +11,10 @@ files or written anywhere:
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+import sys
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import Any
 
 from langchain.agents import create_agent
@@ -54,16 +56,10 @@ class OmitMessageNames(AgentMiddleware):
     OpenAI-compatible endpoints accept ``name`` only on tool messages.
     """
 
-    def wrap_model_call(
-        self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]
-    ) -> ModelResponse:
-        """Call the model with author names removed from non-tool messages."""
-        return handler(_without_names(request))
-
     async def awrap_model_call(
         self, request: ModelRequest, handler: Callable[[ModelRequest], Awaitable[ModelResponse]]
     ) -> ModelResponse:
-        """Async variant of `wrap_model_call`."""
+        """Call the model with author names removed from non-tool messages."""
         return await handler(_without_names(request))
 
 
@@ -100,13 +96,13 @@ def repeat_guard_policies() -> list[PolicyRule]:
 
 
 @tool
-def get_alarm(machine: str) -> str:
+async def get_alarm(machine: str) -> str:
     """Return the current alarm state for one machine."""
     return f"Alarm for {machine}: chamber-pressure warning; severity=medium."
 
 
 @tool
-def search_incident_history(machine: str) -> str:
+async def search_incident_history(machine: str) -> str:
     """Return recent maintenance incidents for one machine."""
     return f"Incident history for {machine}: pressure drift occurred twice this month."
 
@@ -133,9 +129,9 @@ def guarded_agent(
     )
 
 
-def ask(agent: Any, prompt: str, *, thread_id: str) -> Mapping[str, Any]:
+async def ask(agent: Any, prompt: str, *, thread_id: str) -> Mapping[str, Any]:
     """Run one user turn in the conversation identified by ``thread_id``."""
-    return agent.invoke(
+    return await agent.ainvoke(
         {"messages": [{"role": "user", "content": prompt}]},
         config={"configurable": {"thread_id": thread_id}},
     )
@@ -151,3 +147,17 @@ def print_run(result: Mapping[str, Any]) -> None:
             for line in message.text.splitlines():
                 print(f"   {line}")
     print(f"\nFinal answer:\n{result['messages'][-1].text}")
+
+
+def service_url(variable: str) -> str:
+    """Return the service URL in ``variable``, or exit with setup instructions."""
+    url = os.environ.get(variable)
+    if not url:
+        raise SystemExit(f"Set {variable} to run this example (see examples/README.md).")
+    return url
+
+
+def run(main: Coroutine[Any, Any, None]) -> None:
+    """Run ``main``, on a selector event loop on Windows, as psycopg's async driver requires."""
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    asyncio.run(main, loop_factory=loop_factory)

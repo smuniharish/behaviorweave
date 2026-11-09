@@ -5,7 +5,7 @@ to your policies. The tests pin timestamps, so cooldowns are deterministic, and 
 what must happen as well as what must not: no intervention before a threshold, no leakage
 between scopes, and no double counting of redelivered events.
 
-The tests run with plain pytest.
+The tests run with pytest and pytest-asyncio (asyncio_mode=auto).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from behaviorweave import (
 )
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
+pytestmark = pytest.mark.asyncio
 
 
 def build_engine() -> BehaviorEngine:
@@ -48,49 +49,49 @@ def build_engine() -> BehaviorEngine:
     )
 
 
-def call(engine: BehaviorEngine, scope: str = "conversation-1", **arguments: object) -> str:
+async def call(engine: BehaviorEngine, scope: str = "conversation-1", **arguments: object) -> str:
     """Process one ``search`` tool call and return the decision's kind."""
     event = BehaviorEvent.tool_call("search", arguments or {"q": "status"}, scope=scope)
-    return engine.process(event).intervention.kind.value
+    return (await engine.process(event)).intervention.kind.value
 
 
-def failure(engine: BehaviorEngine, minute: int) -> str:
+async def failure(engine: BehaviorEngine, minute: int) -> str:
     """Process one failure outcome at a fixed time and return the decision's kind."""
     event = BehaviorEvent.outcome_event(
         Outcome.FAILURE, scope="service", timestamp=T0 + timedelta(minutes=minute)
     )
-    return engine.process(event).intervention.kind.value
+    return (await engine.process(event)).intervention.kind.value
 
 
-def test_identical_calls_escalate_from_nudge_to_stop() -> None:
+async def test_identical_calls_escalate_from_nudge_to_stop() -> None:
     engine = build_engine()
 
-    assert [call(engine) for _ in range(3)] == ["noop", "nudge", "stop"]
+    assert [await call(engine) for _ in range(3)] == ["noop", "nudge", "stop"]
 
 
-def test_calls_with_different_arguments_are_not_repeats() -> None:
+async def test_calls_with_different_arguments_are_not_repeats() -> None:
     engine = build_engine()
 
-    assert [call(engine, q=f"page {page}") for page in range(3)] == ["noop"] * 3
+    assert [await call(engine, q=f"page {page}") for page in range(3)] == ["noop"] * 3
 
 
-def test_scopes_never_share_history() -> None:
+async def test_scopes_never_share_history() -> None:
     engine = build_engine()
 
-    assert [call(engine, scope=f"conversation-{n}") for n in range(3)] == ["noop"] * 3
+    assert [await call(engine, scope=f"conversation-{n}") for n in range(3)] == ["noop"] * 3
 
 
-def test_a_redelivered_event_repeats_its_decision_without_counting_again() -> None:
+async def test_a_redelivered_event_repeats_its_decision_without_counting_again() -> None:
     engine = build_engine()
     event = BehaviorEvent.tool_call("search", {"q": "status"}, scope="conversation-1")
-    engine.process(BehaviorEvent.tool_call("search", {"q": "status"}, scope="conversation-1"))
-    first = engine.process(event)
+    await engine.process(BehaviorEvent.tool_call("search", {"q": "status"}, scope="conversation-1"))
+    first = await engine.process(event)
 
-    again = engine.process(event)
+    again = await engine.process(event)
 
     assert again.duplicate
     assert again.intervention == first.intervention
-    assert call(engine) == "stop", "the next new call continues the count"
+    assert await call(engine) == "stop", "the next new call continues the count"
 
 
 @pytest.mark.parametrize(
@@ -101,9 +102,9 @@ def test_a_redelivered_event_repeats_its_decision_without_counting_again() -> No
         ((0, 1, 2, 30), ["noop", "noop", "escalate", "escalate"]),
     ],
 )
-def test_a_failure_streak_escalates_once_per_cooldown(
+async def test_a_failure_streak_escalates_once_per_cooldown(
     minutes: tuple[int, ...], expected: list[str]
 ) -> None:
     engine = build_engine()
 
-    assert [failure(engine, minute) for minute in minutes] == expected
+    assert [await failure(engine, minute) for minute in minutes] == expected

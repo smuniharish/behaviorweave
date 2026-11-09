@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import gc
 import json
 import statistics
@@ -30,7 +31,7 @@ def engine() -> BehaviorEngine:
     )
 
 
-def throughput(events: int, repeats: int) -> float:
+async def throughput(events: int, repeats: int) -> float:
     """Return the median events per second over ``repeats`` runs of ``events`` tool calls."""
     stream = [
         BehaviorEvent.tool_call(
@@ -44,12 +45,12 @@ def throughput(events: int, repeats: int) -> float:
         gc.collect()
         started = time.perf_counter()
         for event in stream:
-            subject.process(event)
+            await subject.process(event)
         rates.append(events / (time.perf_counter() - started))
     return statistics.median(rates)
 
 
-def memory(events: int) -> tuple[int, float]:
+async def memory(events: int) -> tuple[int, float]:
     """Return the stored state count and peak traced megabytes for unique-argument calls."""
     subject = engine()
     stream = [
@@ -59,7 +60,7 @@ def memory(events: int) -> tuple[int, float]:
     gc.collect()
     tracemalloc.start()
     for event in stream:
-        subject.process(event)
+        await subject.process(event)
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     # The in-memory store has no public size API, so count its private table.
@@ -73,9 +74,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--events", type=int, default=20_000, help="events per run")
     parser.add_argument("--repeats", type=int, default=5, help="throughput runs (median)")
     arguments = parser.parse_args(argv)
-    states, peak = memory(arguments.events)
+    states, peak = asyncio.run(memory(arguments.events))
     result = {
-        "events_per_second": round(throughput(arguments.events, arguments.repeats)),
+        "events_per_second": round(asyncio.run(throughput(arguments.events, arguments.repeats))),
         "unique_argument_states": states,
         "unique_argument_peak_mb": round(peak, 2),
     }

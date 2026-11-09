@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
-from ._util import freeze
+from ._util import canonical, freeze
 from .events import BehaviorEvent
 from .state import BehaviorState
 
@@ -131,6 +132,74 @@ class InterventionDecision:
         """Whether the host should act on this decision (its kind is not `noop`)."""
         return self.intervention.kind is not InterventionType.NOOP
 
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-ready dictionary that `from_dict` can restore."""
+        intervention = self.intervention
+        explanation = self.explanation
+        return {
+            "intervention": {
+                "kind": intervention.kind.value,
+                "message": intervention.message,
+                "reason": intervention.reason,
+                "pattern": intervention.pattern,
+                "policy": intervention.policy,
+                "scope": intervention.scope,
+                "severity": intervention.severity,
+                "metadata": canonical(intervention.metadata),
+            },
+            "explanation": None
+            if explanation is None
+            else {
+                "pattern": explanation.pattern,
+                "count": explanation.count,
+                "threshold": explanation.threshold,
+                "policy": explanation.policy,
+                "reason": explanation.reason,
+                "provenance_ref": explanation.provenance_ref,
+            },
+            "suppressed": self.suppressed,
+            "duplicate": self.duplicate,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> InterventionDecision:
+        """Restore a decision produced by `to_dict`.
+
+        Raises:
+            ValueError: If required keys are missing or values are malformed.
+        """
+        try:
+            intervention = data["intervention"]
+            explanation = data.get("explanation")
+            return cls(
+                Intervention(
+                    InterventionType(intervention["kind"]),
+                    message=_text(intervention.get("message")),
+                    reason=str(intervention.get("reason", "")),
+                    pattern=_text(intervention.get("pattern")),
+                    policy=_text(intervention.get("policy")),
+                    scope=_text(intervention.get("scope")),
+                    severity=str(intervention.get("severity", "info")),
+                    metadata=dict(intervention.get("metadata") or {}),
+                ),
+                None
+                if explanation is None
+                else Explanation(
+                    pattern=str(explanation["pattern"]),
+                    count=int(explanation["count"]),
+                    threshold=None
+                    if explanation.get("threshold") is None
+                    else int(explanation["threshold"]),
+                    policy=_text(explanation.get("policy")),
+                    reason=str(explanation.get("reason", "")),
+                    provenance_ref=_text(explanation.get("provenance_ref")),
+                ),
+                suppressed=bool(data.get("suppressed", False)),
+                duplicate=bool(data.get("duplicate", False)),
+            )
+        except (KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f"invalid intervention decision: {exc!r}") from exc
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:
@@ -149,3 +218,7 @@ class AuditRecord:
     pattern: str | None
     state: BehaviorState | None
     decision: InterventionDecision
+
+
+def _text(value: object) -> str | None:
+    return None if value is None else str(value)

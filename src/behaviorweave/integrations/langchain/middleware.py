@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
+import inspect
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field
-from threading import Lock
 from typing import Any
 from uuid import uuid4
 
@@ -14,38 +12,31 @@ from langchain.messages import ToolMessage
 from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command
 
+from ..._sync import run_sync
 from ...engine import BehaviorEngine
 from ...errors import EventValidationError
 from ...events import BehaviorEvent, Outcome
 from ...interventions import InterventionDecision, InterventionType
+from ...patterns import _state_key
+from ...state import BehaviorState
 
 __all__ = ["BehaviorWeaveMiddleware", "default_guidance"]
 
 type ScopeResolver = Callable[[ToolCallRequest], str]
 """Returns the behavior scope for a tool call request."""
 
-type DecisionHook = Callable[[InterventionDecision, BehaviorEvent], None]
-"""Receives every decision with the event that produced it."""
+type DecisionHook = Callable[[InterventionDecision, BehaviorEvent], Awaitable[None] | None]
+"""Receives every decision with the event that produced it; may be a coroutine function."""
 
 type GuidanceFormatter = Callable[[InterventionDecision], str]
 """Renders an actionable decision as text for the model."""
 
 _ToolResult = ToolMessage | Command[Any]
 
-# Halts are kept in memory: the least recently halted scopes are forgotten beyond this many,
-# and each scope remembers this many of the tool calls whose outcomes halted it.
-_MAX_HALTED_SCOPES = 10_000
+# Halts live in the engine's state store under this reserved pattern ID. Each scope remembers
+# this many of the tool calls whose outcomes halted it.
+_HALT = "behaviorweave.halt"
 _MAX_HALT_ORIGINS = 256
-
-
-@dataclass(slots=True)
-class _Halt:
-    """Halt state of one scope."""
-
-    decision: InterventionDecision | None = None  # None once released
-    # Tool-call event IDs whose outcomes halted the scope (an insertion-ordered set). A replay
-    # of one of these calls is not blocked, and once released it cannot restore the halt.
-    origins: dict[str, None] = field(default_factory=dict)
 
 
 def default_guidance(decision: InterventionDecision) -> str:
@@ -72,7 +63,12 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
        decision whose kind is in ``block_on`` cannot refuse the call that already ran, so it
        halts the scope: later tool calls in that scope are refused until
        [`release`][behaviorweave.integrations.langchain.BehaviorWeaveMiddleware.release] is
-       called. Halts are kept in memory by this middleware instance.
+       called.
+
+    Halts are kept in the engine's [`BehaviorStateStore`][behaviorweave.BehaviorStateStore],
+    so with a shared durable store they survive restarts and apply to every process that
+    serves the scope. They are removed with the scope's other state, for example by
+    [`InMemoryBehaviorStateStore.clear`][behaviorweave.InMemoryBehaviorStateStore.clear].
 
     Replayed and resumed graph steps reuse their tool-call IDs, so they are recognized as
     redeliveries: the call is not counted again, and an actionable decision is repeated, so
@@ -82,20 +78,26 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
     step is replayed, and a redelivered outcome does not restore a halt that was released.
     LangGraph interrupts raised by a tool propagate unchanged and are not recorded as failures.
 
+    Agents invoked asynchronously (``ainvoke``, ``astream``) run the engine natively. Agents
+    invoked synchronously run it on one reusable event loop per thread, in a copy of the
+    caller's context, so LangGraph's ``interrupt()`` and tracing context keep working.
+
     Args:
         engine: The engine whose policies are applied.
         scope: A fixed scope, or a callable deriving one from the request. By default the
             scope is the LangGraph ``thread_id`` from the run configuration.
         block_on: Intervention kinds that prevent tool calls from running.
         track_outcomes: Whether to record tool results as `success`/`failure` outcomes.
-        on_decision: Optional hook called with every decision and its event. Raise from it, or
-            call LangGraph's ``interrupt()``, to stop or pause the run, for example on a
-            `human_review` decision. Check ``decision.duplicate`` before repeating external
-            side effects, such as paging an operator, but call ``interrupt()`` for duplicates
-            too: a resumed step runs the hook again, and ``interrupt()`` returns the answer.
+        on_decision: Optional hook, a function or a coroutine function, called with every
+            decision and its event. Raise from it, or call LangGraph's ``interrupt()``, to
+            stop or pause the run, for example on a `human_review` decision. Check
+            ``decision.duplicate`` before repeating external side effects, such as paging an
+            operator, but call ``interrupt()`` for duplicates too: a resumed step runs the hook
+            again, and ``interrupt()`` returns the answer.
         formatter: Renders a decision as guidance text. Defaults to
             [`default_guidance`][behaviorweave.integrations.langchain.default_guidance].
-        name: Middleware name; set it when an agent uses more than one instance.
+        name: Middleware name; set it when an agent uses more than one instance. Halts are
+            stored per name, so instances with different names halt independently.
 
     Example:
         ```python
@@ -104,7 +106,7 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
             tools=[get_alarm],
             middleware=[BehaviorWeaveMiddleware(engine)],
         )
-        agent.invoke(
+        await agent.ainvoke(
             {"messages": [{"role": "user", "content": "Inspect ETCH-3"}]},
             config={"configurable": {"thread_id": "incident-42"}},
         )
@@ -130,15 +132,22 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         self.on_decision = on_decision
         self.formatter: GuidanceFormatter = formatter or default_guidance
         self._name = name
-        self._halts: OrderedDict[str, _Halt] = OrderedDict()
-        self._halts_lock = Lock()
 
     @property
     def name(self) -> str:
         """Middleware name used by ``create_agent`` to tell instances apart."""
         return self._name or super().name
 
-    def release(self, scope: str) -> bool:
+    async def halted(self, scope: str) -> InterventionDecision | None:
+        """Return the decision that halted ``scope``, or ``None`` when it is not halted.
+
+        Args:
+            scope: The scope, as resolved by the middleware.
+        """
+        state = await self.engine.store.get(self._halt_key(scope))
+        return _halt_decision(state)
+
+    async def release(self, scope: str) -> bool:
         """Lift the halt on ``scope`` so that its tool calls run again.
 
         When ``on_decision`` paused the run with ``interrupt()``, call this from the
@@ -151,12 +160,18 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         Returns:
             Whether the scope was halted.
         """
-        with self._halts_lock:
-            halt = self._halts.get(scope)
-            if halt is None or halt.decision is None:
-                return False
-            halt.decision = None
-            return True
+        key = self._halt_key(scope)
+        if _halt_decision(await self.engine.store.get(key)) is None:
+            return False
+        released = False
+
+        def apply(current: BehaviorState | None) -> BehaviorState:
+            nonlocal released
+            released = _halt_decision(current) is not None
+            return _halt_state(scope, current, None, _halt_origins(current))
+
+        await self.engine.store.update(key, apply)
+        return released
 
     def wrap_tool_call(
         self,
@@ -164,7 +179,7 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         handler: Callable[[ToolCallRequest], _ToolResult],
     ) -> _ToolResult:
         """Evaluate policies around a synchronous tool call."""
-        scope, event_id, decision, blocking = self._before(request)
+        scope, event_id, decision, blocking = run_sync(self._before(request))
         if blocking is not None:
             return self._blocked(request, blocking)
         try:
@@ -172,9 +187,9 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         except GraphBubbleUp:
             raise
         except Exception:
-            self._after(request, scope, event_id, failed=True)
+            run_sync(self._after(request, scope, event_id, failed=True))
             raise
-        outcome = self._after(request, scope, event_id, failed=_is_error(result))
+        outcome = run_sync(self._after(request, scope, event_id, failed=_is_error(result)))
         return self._annotate(result, decision, outcome)
 
     async def awrap_tool_call(
@@ -183,7 +198,7 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         handler: Callable[[ToolCallRequest], Awaitable[_ToolResult]],
     ) -> _ToolResult:
         """Evaluate policies around an asynchronous tool call."""
-        scope, event_id, decision, blocking = self._before(request)
+        scope, event_id, decision, blocking = await self._before(request)
         if blocking is not None:
             return self._blocked(request, blocking)
         try:
@@ -191,12 +206,12 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         except GraphBubbleUp:
             raise
         except Exception:
-            self._after(request, scope, event_id, failed=True)
+            await self._after(request, scope, event_id, failed=True)
             raise
-        outcome = self._after(request, scope, event_id, failed=_is_error(result))
+        outcome = await self._after(request, scope, event_id, failed=_is_error(result))
         return self._annotate(result, decision, outcome)
 
-    def _before(
+    async def _before(
         self, request: ToolCallRequest
     ) -> tuple[str, str, InterventionDecision, InterventionDecision | None]:
         scope = self._resolve_scope(request)
@@ -205,17 +220,16 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
         event = BehaviorEvent.tool_call(
             call["name"], call.get("args") or {}, scope=scope, event_id=event_id
         )
-        decision = self.engine.process(event)
-        self._notify(decision, event)
+        decision = await self.engine.process(event)
+        await self._notify(decision, event)
         if decision.intervention.kind in self.block_on:
             return scope, event_id, decision, decision
-        with self._halts_lock:
-            halt = self._halts.get(scope)
-            if halt is None or event_id in halt.origins:
-                return scope, event_id, decision, None
-            return scope, event_id, decision, halt.decision
+        halt = await self.engine.store.get(self._halt_key(scope))
+        if event_id in _halt_origins(halt):
+            return scope, event_id, decision, None
+        return scope, event_id, decision, _halt_decision(halt)
 
-    def _after(
+    async def _after(
         self, request: ToolCallRequest, scope: str, event_id: str, *, failed: bool
     ) -> InterventionDecision | None:
         if not self.track_outcomes:
@@ -227,30 +241,37 @@ class BehaviorWeaveMiddleware(AgentMiddleware):
             tool_name=request.tool_call["name"],
             event_id=f"{event_id}:{outcome.value}",
         )
-        decision = self.engine.process(event)
+        decision = await self.engine.process(event)
         if decision.intervention.kind in self.block_on:
-            self._halt(scope, decision, event_id)
-        self._notify(decision, event)
+            await self._halt(scope, decision, event_id)
+        await self._notify(decision, event)
         return decision
 
-    def _halt(self, scope: str, decision: InterventionDecision, event_id: str) -> None:
-        with self._halts_lock:
-            halt = self._halts.get(scope)
-            if halt is None:
-                halt = self._halts[scope] = _Halt()
-            elif decision.duplicate and halt.decision is None and event_id in halt.origins:
-                return  # this call's halt was released; its redelivered outcome cannot restore it
-            halt.decision = decision
-            halt.origins[event_id] = None
-            if len(halt.origins) > _MAX_HALT_ORIGINS:
-                del halt.origins[next(iter(halt.origins))]
-            self._halts.move_to_end(scope)
-            if len(self._halts) > _MAX_HALTED_SCOPES:
-                self._halts.popitem(last=False)
+    async def _halt(self, scope: str, decision: InterventionDecision, event_id: str) -> None:
+        def apply(current: BehaviorState | None) -> BehaviorState:
+            origins = _halt_origins(current)
+            if (
+                current is not None
+                and decision.duplicate
+                and event_id in origins
+                and _halt_decision(current) is None
+            ):
+                # This call's halt was released; its redelivered outcome cannot restore it.
+                return current
+            if event_id not in origins:
+                origins = (*origins, event_id)[-_MAX_HALT_ORIGINS:]
+            return _halt_state(scope, current, decision, origins)
 
-    def _notify(self, decision: InterventionDecision, event: BehaviorEvent) -> None:
+        await self.engine.store.update(self._halt_key(scope), apply)
+
+    async def _notify(self, decision: InterventionDecision, event: BehaviorEvent) -> None:
         if self.on_decision is not None:
-            self.on_decision(decision, event)
+            result = self.on_decision(decision, event)
+            if inspect.isawaitable(result):
+                await result
+
+    def _halt_key(self, scope: str) -> str:
+        return _state_key(scope, _HALT, self.name)
 
     def _resolve_scope(self, request: ToolCallRequest) -> str:
         if isinstance(self.scope, str):
@@ -304,3 +325,36 @@ def _tool_event_id(request: ToolCallRequest) -> str:
 
 def _is_error(result: _ToolResult) -> bool:
     return isinstance(result, ToolMessage) and result.status == "error"
+
+
+def _halt_decision(state: BehaviorState | None) -> InterventionDecision | None:
+    """The halting decision recorded in ``state``, or ``None`` when absent or released."""
+    raw = state.metadata.get("decision") if state is not None else None
+    return InterventionDecision.from_dict(raw) if isinstance(raw, Mapping) else None
+
+
+def _halt_origins(state: BehaviorState | None) -> tuple[str, ...]:
+    """Tool-call event IDs whose outcomes halted the scope, oldest first.
+
+    A replay of one of these calls is not blocked, and once released it cannot restore the
+    halt.
+    """
+    raw = state.metadata.get("origins") if state is not None else None
+    return tuple(str(item) for item in raw) if isinstance(raw, Sequence) else ()
+
+
+def _halt_state(
+    scope: str,
+    current: BehaviorState | None,
+    decision: InterventionDecision | None,
+    origins: tuple[str, ...],
+) -> BehaviorState:
+    return BehaviorState(
+        pattern_id=_HALT,
+        scope=scope,
+        metadata={
+            "decision": decision.to_dict() if decision is not None else None,
+            "origins": list(origins),
+        },
+        version=current.version + 1 if current is not None else 1,
+    )

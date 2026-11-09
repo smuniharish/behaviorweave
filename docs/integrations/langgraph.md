@@ -7,7 +7,7 @@ on them.
 ## Guard a loop with conditional edges
 
 Report node executions with
-[`LangGraphEventAdapter`][behaviorweave.integrations.langgraph.LangGraphEventAdapter] and
+[`LangGraphEventAdapter`](../api/index.md#behaviorweave.integrations.langgraph.LangGraphEventAdapter) and
 route on terminal decisions:
 
 ```python
@@ -33,8 +33,8 @@ class LoopState(TypedDict):
     stopped_by: str | None
 
 
-def work(state: LoopState) -> dict[str, object]:
-    decision = engine.process(adapter.node("work", scope="thread-7"))
+async def work(state: LoopState) -> dict[str, object]:
+    decision = await engine.process(adapter.node("work", scope="thread-7"))
     stopped = (
         decision.intervention.policy
         if decision.intervention.kind.is_terminal
@@ -51,7 +51,7 @@ builder = StateGraph(LoopState)
 builder.add_node("work", work)
 builder.add_edge(START, "work")
 builder.add_conditional_edges("work", route)
-result = builder.compile().invoke({"steps": 0, "stopped_by": None})
+result = await builder.compile().ainvoke({"steps": 0, "stopped_by": None})
 print(result)  # {'steps': 4, 'stopped_by': 'loop-guard'}
 ```
 
@@ -78,12 +78,12 @@ hops = [
 ]
 last = None
 for source, target in hops:
-    last = engine.process(adapter.handoff(source, target, scope="case-9"))
+    last = await engine.process(adapter.handoff(source, target, scope="case-9"))
 print(last.intervention.kind.value)  # redirect
 ```
 
 For LangGraph Swarm, stream the swarm and report each change of active agent; see
-[`05_langgraph_swarm.py`](../examples.md).
+[`05_langgraph_swarm.py`](../examples/index.md).
 
 ## Adapter reference
 
@@ -94,3 +94,26 @@ For LangGraph Swarm, stream the swarm and report each change of active agent; se
 | `outcome(outcome, *, scope, node_name=None, event_id=None)` | `outcome` |
 | `handoff(source_agent, target_agent, *, scope, event_id=None)` | `agent_handoff` |
 | `delegation(source_agent, target_agent, *, scope, event_id=None)` | `delegation` |
+
+## Reuse a LangGraph store
+
+`LangGraphBehaviorStateStore` accepts any `BaseStore`, a namespace, and an optional TTL.
+The backend must support TTL if you request it. Async operations pass through to the
+backend without taking over its lifecycle.
+
+```python
+from langgraph.store.memory import InMemoryStore
+from behaviorweave.integrations.langgraph import LangGraphBehaviorStateStore
+
+backend = InMemoryStore()
+state_store = LangGraphBehaviorStateStore(
+    backend, namespace=("support", "behavior")
+)
+engine = BehaviorEngine(state_store=state_store)
+```
+
+Locks serialize updates within one adapter instance only. Share that instance in a process.
+For cross-process atomicity, use the PostgreSQL or Redis reference store; see
+[state and concurrency](../guide/concepts/state.md). The
+[Postgres BaseStore example](https://github.com/smuniharish/behaviorweave/blob/master/examples/18_langgraph_store.py)
+shows backend setup, TTL, namespace isolation, and cleanup.

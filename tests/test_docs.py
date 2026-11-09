@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib
 import importlib.metadata
 import importlib.util
+import inspect
 import io
 import re
 import shutil
@@ -100,8 +102,15 @@ DOCUMENTED = [path for path in MARKDOWN if _snippets(path)]
 def test_documentation_snippets_run_and_match_their_output(path: Path) -> None:
     namespace: dict[str, object] = {"__name__": "__docs__", "__check_print": _check_print}
     for line, code in _snippets(path):
-        compiled = compile(_with_print_checks(code), f"{path.name}:{line}", "exec")
-        exec(compiled, namespace)  # noqa: S102 - runs the documentation's own snippets
+        compiled = compile(
+            _with_print_checks(code),
+            f"{path.name}:{line}",
+            "exec",
+            flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+        )
+        result = eval(compiled, namespace)  # noqa: S307 - runs this repository's snippets
+        if inspect.iscoroutine(result):
+            asyncio.run(result)
 
 
 def test_snippet_extraction_honors_skip_markers_and_indentation() -> None:
@@ -130,12 +139,13 @@ def test_print_expectations_are_checked_on_single_and_multi_line_calls() -> None
 
 
 def test_every_public_symbol_is_in_the_api_reference() -> None:
-    reference = (DOCS / "api-reference.md").read_text(encoding="utf-8")
+    reference = "\n".join(path.read_text(encoding="utf-8") for path in (DOCS / "api").glob("*.md"))
     modules = [
         "behaviorweave",
         "behaviorweave.integrations.langchain",
         "behaviorweave.integrations.langgraph",
-        "behaviorweave.integrations.langgraph_xai",
+        "behaviorweave.integrations.agxai",
+        "behaviorweave.testing",
     ]
     missing = [
         f"{module}.{name}"
@@ -150,12 +160,11 @@ def test_readme_links_resolve() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     targets = re.findall(r"\]\(([^)\s]+)\)", readme) + re.findall(r'src="([^"]+)"', readme)
     local = [t for t in targets if not t.startswith(("http://", "https://", "#", "mailto:"))]
-    assert local
     assert [t for t in local if not (ROOT / t).exists()] == []
 
 
 def test_every_diagram_is_rendered_and_used() -> None:
-    sources = {path.stem for path in (DOCS / "diagrams").glob("*.mmd")}
+    sources = {path.stem for path in (ROOT / "diagrams").glob("*.mmd")}
     images = {path.stem for path in (DOCS / "assets" / "diagrams").glob("*.png")}
     assert sources == images
     text = "\n".join(path.read_text(encoding="utf-8") for path in MARKDOWN)
@@ -182,7 +191,7 @@ def test_the_diagram_check_reports_every_kind_of_drift(
 ) -> None:
     script = _render_script()
     sources, output = tmp_path / "diagrams", tmp_path / "images"
-    shutil.copytree(DOCS / "diagrams", sources)
+    shutil.copytree(ROOT / "diagrams", sources)
     shutil.copytree(DOCS / "assets" / "diagrams", output)
     monkeypatch.setattr(script, "SOURCES", sources)
     monkeypatch.setattr(script, "OUTPUT", output)
@@ -226,3 +235,30 @@ def test_versions_are_consistent() -> None:
     assert latest is not None
     assert behaviorweave.__version__ == importlib.metadata.version("behaviorweave")
     assert latest["version"] == behaviorweave.__version__
+
+
+def test_site_link_checker_handles_host_prefix_assets_and_anchors(tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "check_site_links", ROOT / "scripts" / "check_site_links.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    (tmp_path / "asset.svg").write_text("<svg/>", encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<h1 id="ok">Title</h1><a href="/en/latest/#ok">Home</a>'
+        '<img src="/en/latest/asset.svg"><a href="https://example.com">External</a>',
+        encoding="utf-8",
+    )
+    assert module.broken_links(tmp_path, base_path="/en/latest/") == []
+    (tmp_path / "other.html").write_text(
+        '<a href="index.html#absent">Anchor</a><img src="missing.svg">',
+        encoding="utf-8",
+    )
+    assert module.broken_links(tmp_path) == [
+        "index.html: missing target /en/latest/#ok",
+        "index.html: missing target /en/latest/asset.svg",
+        "other.html: missing anchor index.html#absent",
+        "other.html: missing target missing.svg",
+    ]

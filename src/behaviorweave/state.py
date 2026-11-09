@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from threading import RLock
-from typing import Any, Protocol
+from threading import Lock
+from typing import Any
 
 from ._util import EMPTY_MAP, canonical, freeze
 from .errors import StateStoreError
@@ -156,45 +157,65 @@ class BehaviorState:
         return cls.from_dict(data)
 
 
-class BehaviorStateStore(Protocol):
-    """Storage boundary for behavior state.
+class BehaviorStateStore(ABC):
+    """Base class for the storage of behavior state.
 
-    The engine only requires `update`; the other methods support application
-    inspection and lifecycle management. Implement this protocol to keep state in a durable
-    or distributed backend.
+    The engine advances state only through `update`; the other methods support inspection and
+    lifecycle management. Subclass it to keep state in a durable or distributed backend and
+    implement `get`, `update`, `put`, and `delete`; `close` works as inherited.
+    `behaviorweave.testing.BehaviorStateStoreContract` checks a store against this contract.
+
+    A store must:
+
+    - make `update` atomic per key: concurrent updates of one key are serialized, across every
+      process that shares the backend. Optimistic implementations may invoke ``fn`` more than
+      once, but must commit only the result of the final invocation;
+    - return states that are independent of the stored ones, so that mutating a returned
+      state's metadata never changes what is stored;
+    - never return an expired state, when the store supports expiry.
     """
 
-    def get(self, key: str) -> BehaviorState | None:
+    @abstractmethod
+    async def get(self, key: str) -> BehaviorState | None:
         """Return the state stored under ``key``, or ``None`` when absent or expired."""
-        ...
 
-    def update(
+    @abstractmethod
+    async def update(
         self, key: str, fn: Callable[[BehaviorState | None], BehaviorState]
     ) -> BehaviorState:
         """Atomically replace the state under ``key`` with ``fn(current)`` and return it.
 
-        Implementations must serialize concurrent updates of the same key. Optimistic
-        implementations may invoke ``fn`` more than once, but must commit only the result
-        of the final invocation.
+        ``fn`` is a pure, synchronous function of the current state; it receives ``None``
+        when no state is stored.
+
+        Raises:
+            StateStoreError: If ``fn`` does not return a ``BehaviorState``.
         """
-        ...
 
-    def put(self, key: str, state: BehaviorState) -> None:
-        """Store ``state`` under ``key``, replacing any existing state."""
-        ...
+    @abstractmethod
+    async def put(self, key: str, state: BehaviorState) -> None:
+        """Store ``state`` under ``key``, replacing any existing state.
 
-    def delete(self, key: str) -> None:
+        Raises:
+            StateStoreError: If ``state`` is not a ``BehaviorState``.
+        """
+
+    @abstractmethod
+    async def delete(self, key: str) -> None:
         """Remove the state stored under ``key``, if any."""
-        ...
+
+    async def close(self) -> None:  # noqa: B027 - optional hook, no-op by default
+        """Release resources held by the store. The default does nothing."""
 
 
-class InMemoryBehaviorStateStore:
-    """Thread-safe, process-local state store with optional expiry.
+class InMemoryBehaviorStateStore(BehaviorStateStore):
+    """Process-local state store with optional expiry, safe across threads and event loops.
 
     Suitable for development, tests, and single-process services. State is not shared between
-    processes and is lost on restart; implement
+    processes and is lost on restart; subclass
     [`BehaviorStateStore`][behaviorweave.BehaviorStateStore] for durable or distributed
-    deployments.
+    deployments. Every operation completes without awaiting, so one store can be shared by
+    any number of tasks, threads, and event loops.
 
     Args:
         ttl: Optional positive lifetime for each entry, refreshed on every write. Expired
@@ -219,16 +240,16 @@ class InMemoryBehaviorStateStore:
         self._ttl = ttl
         self._clock = clock if clock is not None else _utc_now
         self._states: dict[str, tuple[BehaviorState, datetime | None]] = {}
-        self._lock = RLock()
+        self._lock = Lock()
         self._writes = 0
 
-    def get(self, key: str) -> BehaviorState | None:
+    async def get(self, key: str) -> BehaviorState | None:
         """Return the state stored under ``key``, or ``None`` when absent or expired."""
         with self._lock:
             state = self._load(key)
             return _detach(state) if state is not None else None
 
-    def update(
+    async def update(
         self, key: str, fn: Callable[[BehaviorState | None], BehaviorState]
     ) -> BehaviorState:
         """Atomically replace the state under ``key`` with ``fn(current)`` and return it.
@@ -245,7 +266,7 @@ class InMemoryBehaviorStateStore:
             self._store(key, stored)
             return _detach(stored)
 
-    def put(self, key: str, state: BehaviorState) -> None:
+    async def put(self, key: str, state: BehaviorState) -> None:
         """Store ``state`` under ``key``, replacing any existing state.
 
         Raises:
@@ -256,12 +277,12 @@ class InMemoryBehaviorStateStore:
         with self._lock:
             self._store(key, _detach(state))
 
-    def delete(self, key: str) -> None:
+    async def delete(self, key: str) -> None:
         """Remove the state stored under ``key``, if any."""
         with self._lock:
             self._states.pop(key, None)
 
-    def clear(self, scope: str | None = None) -> int:
+    async def clear(self, scope: str | None = None) -> int:
         """Remove every state, or only the states of one ``scope``.
 
         Call this when a conversation or run ends to release its behavioral history. Expired
@@ -280,7 +301,7 @@ class InMemoryBehaviorStateStore:
                 removed = [self._states.pop(key) for key in keys]
             return sum(1 for _, expires in removed if expires is None or expires > now)
 
-    def purge_expired(self) -> int:
+    async def purge_expired(self) -> int:
         """Remove every expired state immediately.
 
         Returns:

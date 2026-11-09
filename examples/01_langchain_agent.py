@@ -8,14 +8,16 @@ Run:
     uv run python examples/01_langchain_agent.py
 """
 
+import asyncio
+
 from behaviorweave import BehaviorEngine
 from common import ask, guarded_agent, print_run, repeat_guard_policies
 
 
-def main() -> None:
+async def main() -> None:
     engine = BehaviorEngine(policies=repeat_guard_policies())
     agent = guarded_agent(engine)
-    result = ask(
+    result = await ask(
         agent,
         "Call get_alarm for ETCH-3 three times, one call at a time, then summarize the alarm.",
         thread_id="example-01",
@@ -24,4 +26,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

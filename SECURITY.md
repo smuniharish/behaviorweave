@@ -4,7 +4,8 @@
 
 | Version | Supported |
 | --- | --- |
-| 1.x | Yes |
+| 1.1.x | Yes |
+| 1.0.x | No |
 | < 1.0 | No |
 
 ## Reporting a vulnerability
@@ -27,6 +28,10 @@ informed until a fix is released.
   containing credentials in events, and redact sensitive tool arguments before reporting.
 - Policies are plain data. Serialized state is JSON and is never evaluated as code.
 - The in-memory state store is process-local and is not a durable security boundary.
+- Shared state stores need cross-process atomic updates, least-privilege credentials, TLS,
+  and retention policies. The LangGraph adapter's instance-local locks are not distributed.
+- Audit/export providers may receive event metadata. Configure sanitization at the host
+  boundary and follow each provider's lifecycle and authentication settings.
 
 See the [security and privacy guide](https://behaviorweave.readthedocs.io/en/latest/security/)
 for details.

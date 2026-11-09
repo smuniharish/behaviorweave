@@ -28,7 +28,7 @@ from behaviorweave import (
     built_in_patterns,
 )
 from behaviorweave._util import canonical, dumps
-from behaviorweave.integrations.langgraph_xai import LangGraphXAIEventAdapter
+from behaviorweave.integrations.agxai import AgxaiEventAdapter
 from support import RecordingStore, at
 
 json_scalars = st.none() | st.booleans() | st.integers() | st.text(max_size=8)
@@ -85,18 +85,18 @@ def test_fingerprinting_and_serialization_are_total(arguments: dict) -> None:
 
 
 @given(st.lists(names, max_size=60))
-def test_consecutive_count_is_the_trailing_run_length(sequence: list[str]) -> None:
+async def test_consecutive_count_is_the_trailing_run_length(sequence: list[str]) -> None:
     store = InMemoryBehaviorStateStore()
     pattern = ConsecutivePattern("p", frozenset({EventType.NODE_EXECUTION}))
     run, previous = 0, None
     for name in sequence:
         event = BehaviorEvent(EventType.NODE_EXECUTION, scope="s", node_name=name)
         run, previous = (run + 1 if name == previous else 1), name
-        assert pattern.observe(event, store).count == run
+        assert (await pattern.observe(event, store)).count == run
 
 
 @given(st.lists(outcomes, max_size=60))
-def test_streaks_follow_the_reference_model(sequence: list[Outcome]) -> None:
+async def test_streaks_follow_the_reference_model(sequence: list[Outcome]) -> None:
     streaks = [p for p in built_in_patterns() if isinstance(p, StreakPattern)]
     store = InMemoryBehaviorStateStore()
     model = dict.fromkeys((p.pattern_id for p in streaks), 0)
@@ -108,11 +108,11 @@ def test_streaks_follow_the_reference_model(sequence: list[Outcome]) -> None:
             elif outcome in pattern.resets:
                 model[pattern.pattern_id] = 0
             if pattern.matches(event):
-                assert pattern.observe(event, store).count == model[pattern.pattern_id]
+                assert (await pattern.observe(event, store)).count == model[pattern.pattern_id]
 
 
 @given(st.lists(names, max_size=60))
-def test_oscillation_follows_the_reference_model(sequence: list[str]) -> None:
+async def test_oscillation_follows_the_reference_model(sequence: list[str]) -> None:
     store = InMemoryBehaviorStateStore()
     pattern = OscillationPattern("p", frozenset({EventType.NODE_EXECUTION}))
     before_previous, previous, count = None, None, 0
@@ -120,18 +120,18 @@ def test_oscillation_follows_the_reference_model(sequence: list[str]) -> None:
         event = BehaviorEvent(EventType.NODE_EXECUTION, scope="s", node_name=name)
         count = count + 1 if name == before_previous and name != previous else 0
         before_previous, previous = previous, name
-        assert pattern.observe(event, store).count == count
+        assert (await pattern.observe(event, store)).count == count
 
 
 @given(st.lists(names, max_size=60))
-def test_frequency_counts_every_occurrence(sequence: list[str]) -> None:
+async def test_frequency_counts_every_occurrence(sequence: list[str]) -> None:
     store = InMemoryBehaviorStateStore()
     pattern = FrequencyPattern("p", frozenset({EventType.NODE_EXECUTION}))
     seen: Counter[str] = Counter()
     for name in sequence:
         seen[name] += 1
         event = BehaviorEvent(EventType.NODE_EXECUTION, scope="s", node_name=name)
-        assert pattern.observe(event, store).count == seen[name]
+        assert (await pattern.observe(event, store)).count == seen[name]
 
 
 def _event_stream(draw_names: list[str], draw_outcomes: list[Outcome]) -> list[BehaviorEvent]:
@@ -158,7 +158,7 @@ ALL_PATTERN_POLICIES = [
 
 
 @given(st.lists(names, max_size=15), st.lists(outcomes, max_size=15), st.data())
-def test_redelivery_repeats_the_original_decision_without_changing_state(
+async def test_redelivery_repeats_the_original_decision_without_changing_state(
     name_list: list[str], outcome_list: list[Outcome], data: st.DataObject
 ) -> None:
     events = _event_stream(name_list, outcome_list)
@@ -170,10 +170,10 @@ def test_redelivery_repeats_the_original_decision_without_changing_state(
     plain_store, replay_store = RecordingStore(), RecordingStore()
     plain = BehaviorEngine(policies=ALL_PATTERN_POLICIES, state_store=plain_store)
     replayed = BehaviorEngine(policies=ALL_PATTERN_POLICIES, state_store=replay_store)
-    expected = {event.event_id: plain.process(event) for event in events}
+    expected = {event.event_id: await plain.process(event) for event in events}
     seen: set[str] = set()
     for event in with_replays:
-        decision = replayed.process(event)
+        decision = await replayed.process(event)
         original = expected[event.event_id]
         if event.event_id not in seen:
             assert decision == original
@@ -187,7 +187,7 @@ def test_redelivery_repeats_the_original_decision_without_changing_state(
 
 
 @given(st.lists(st.tuples(st.sampled_from(["s1", "s2", "s3"]), names), max_size=40))
-def test_scopes_never_influence_each_other(steps: list[tuple[str, str]]) -> None:
+async def test_scopes_never_influence_each_other(steps: list[tuple[str, str]]) -> None:
     rules = [
         PolicyRule("nudge", "repeated_tool_call", 2, InterventionType.NUDGE),
         PolicyRule(
@@ -199,10 +199,12 @@ def test_scopes_never_influence_each_other(steps: list[tuple[str, str]]) -> None
         for i, (scope, name) in enumerate(steps)
     ]
     shared = BehaviorEngine(policies=rules)
-    interleaved = [(e.scope, shared.process(e).intervention.kind) for e in events]
+    interleaved = [(e.scope, (await shared.process(e)).intervention.kind) for e in events]
     for scope in {"s1", "s2", "s3"}:
         isolated = BehaviorEngine(policies=rules)
-        expected = [isolated.process(e).intervention.kind for e in events if e.scope == scope]
+        expected = [
+            (await isolated.process(e)).intervention.kind for e in events if e.scope == scope
+        ]
         assert [kind for s, kind in interleaved if s == scope] == expected
 
 
@@ -246,7 +248,7 @@ def test_policy_selection_matches_the_precedence_oracle(
 
 
 @given(st.lists(st.integers(0, 120), min_size=1, max_size=40), st.integers(1, 30))
-def test_cooldown_law(offsets: list[int], cooldown: int) -> None:
+async def test_cooldown_law(offsets: list[int], cooldown: int) -> None:
     engine = BehaviorEngine(
         policies=[
             PolicyRule(
@@ -260,7 +262,9 @@ def test_cooldown_law(offsets: list[int], cooldown: int) -> None:
     )
     until = None
     for offset in offsets:
-        decision = engine.process(BehaviorEvent.tool_call("t", scope="s", timestamp=at(offset)))
+        decision = await engine.process(
+            BehaviorEvent.tool_call("t", scope="s", timestamp=at(offset))
+        )
         expected = until is None or until <= at(offset)
         assert decision.actionable == expected
         assert decision.suppressed == (not expected)
@@ -269,7 +273,9 @@ def test_cooldown_law(offsets: list[int], cooldown: int) -> None:
 
 
 @given(st.lists(names, max_size=40), st.integers(1, 4))
-def test_once_only_fires_at_most_once_per_history(sequence: list[str], threshold: int) -> None:
+async def test_once_only_fires_at_most_once_per_history(
+    sequence: list[str], threshold: int
+) -> None:
     streak = BehaviorEngine(
         policies=[
             PolicyRule(
@@ -283,8 +289,8 @@ def test_once_only_fires_at_most_once_per_history(sequence: list[str], threshold
         ]
     )
     events = [BehaviorEvent(EventType.NODE_EXECUTION, scope="s", node_name=n) for n in sequence]
-    streak_fired = sum(streak.process(event).actionable for event in events)
-    frequency_fired = sum(frequency.process(event).actionable for event in events)
+    streak_fired = sum([(await streak.process(event)).actionable for event in events])
+    frequency_fired = sum([(await frequency.process(event)).actionable for event in events])
     runs, run, previous = [], 0, None
     for name in sequence:
         run, previous = (run + 1 if name == previous else 1), name
@@ -335,7 +341,7 @@ def test_state_serialization_round_trips(state: BehaviorState) -> None:
     assert BehaviorState.from_dict(json.loads(state.to_json())) == state
 
 
-xai_fields = st.sampled_from(
+agxai_fields = st.sampled_from(
     [
         "event_type",
         "id",
@@ -357,7 +363,7 @@ xai_fields = st.sampled_from(
         "target_agent",
     ]
 )
-xai_scalars = (
+agxai_scalars = (
     json_scalars
     | st.uuids()
     | st.datetimes(timezones=st.none() | st.just(UTC))
@@ -381,23 +387,25 @@ xai_scalars = (
         ]
     )
 )
-xai_payloads = st.dictionaries(
-    xai_fields,
+agxai_payloads = st.dictionaries(
+    agxai_fields,
     st.recursive(
-        xai_scalars,
-        lambda inner: st.lists(inner, max_size=3) | st.dictionaries(xai_fields, inner, max_size=4),
+        agxai_scalars,
+        lambda inner: (
+            st.lists(inner, max_size=3) | st.dictionaries(agxai_fields, inner, max_size=4)
+        ),
         max_leaves=12,
     ),
     max_size=8,
 )
 
 
-@given(xai_payloads)
-def test_the_xai_adapter_maps_any_mapping_to_a_valid_event(payload: dict[str, object]) -> None:
-    event = LangGraphXAIEventAdapter().event(payload, scope="s")
+@given(agxai_payloads)
+def test_the_agxai_adapter_maps_any_mapping_to_a_valid_event(payload: dict[str, object]) -> None:
+    event = AgxaiEventAdapter().event(payload, scope="s")
 
     assert event.timestamp.utcoffset() is not None
-    assert set(event.metadata) <= {"source", "xai_event_type", "sequence"}
+    assert set(event.metadata) <= {"source", "agxai_event_type", "sequence"}
     record_id = payload.get("id")
     if isinstance(record_id, UUID) or (isinstance(record_id, str) and record_id):
         assert event.event_id == event.provenance_ref == str(record_id)

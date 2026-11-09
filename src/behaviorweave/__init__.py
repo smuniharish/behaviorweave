@@ -6,7 +6,10 @@ as loops, streaks, and oscillation, evaluates explicit policies, and returns a t
 intervention decision for the host runtime to apply.
 """
 
-from .engine import AuditSink, BehaviorEngine
+from importlib.metadata import PackageNotFoundError, version
+
+from .audit import AuditSink, InMemoryAuditSink
+from .engine import BehaviorEngine
 from .errors import (
     BehaviorWeaveError,
     EventValidationError,
@@ -46,6 +49,7 @@ __all__ = [
     "EventValidationError",
     "Explanation",
     "FrequencyPattern",
+    "InMemoryAuditSink",
     "InMemoryBehaviorStateStore",
     "Intervention",
     "InterventionDecision",
@@ -59,7 +63,11 @@ __all__ = [
     "PolicyRule",
     "StateStoreError",
     "StreakPattern",
+    "__version__",
     "built_in_patterns",
 ]
 
-__version__ = "1.0.0"
+try:
+    __version__ = version("behaviorweave")
+except PackageNotFoundError:  # pragma: no cover - only when imported from a source tree
+    __version__ = "0.0.0"

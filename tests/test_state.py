@@ -9,7 +9,8 @@ from support import ManualClock, at
 
 def _state(**overrides: object) -> BehaviorState:
     fields: dict[str, object] = {"pattern_id": "p", "scope": "s", "count": 1, **overrides}
-    return BehaviorState(**fields)  # type: ignore[arg-type]
+    # pyrefly: ignore[bad-argument-type]
+    return BehaviorState(**fields)
 
 
 @pytest.mark.parametrize("field", ["count", "event_count", "version"])
@@ -33,7 +34,8 @@ def test_state_normalizes_containers() -> None:
     assert state.intervention_history == ("a",)
     assert state.seen_event_ids == ("e",)
     with pytest.raises(TypeError):
-        state.cooldowns["x"] = at(0)  # type: ignore[index]
+        # pyrefly: ignore[unsupported-operation]
+        state.cooldowns["x"] = at(0)
     assert _state().metadata == {}
 
 
@@ -91,62 +93,69 @@ def test_from_json_rejects_malformed_documents(raw: str | bytes) -> None:
         BehaviorState.from_json(raw)
 
 
-def test_store_crud() -> None:
+async def test_store_crud() -> None:
     store = InMemoryBehaviorStateStore()
-    assert store.get("k") is None
-    store.put("k", _state())
-    assert store.get("k") == _state()
-    updated = store.update("k", lambda current: _state(count=(current.count if current else 0) + 1))
+    assert await store.get("k") is None
+    await store.put("k", _state())
+    assert await store.get("k") == _state()
+    updated = await store.update(
+        "k", lambda current: _state(count=(current.count if current else 0) + 1)
+    )
     assert updated.count == 2
-    assert store.update("new", lambda current: _state(count=0 if current is None else 9)).count == 0
-    store.delete("k")
-    store.delete("missing")
-    assert store.get("k") is None
+    assert (
+        await store.update("new", lambda current: _state(count=0 if current is None else 9))
+    ).count == 0
+    await store.delete("k")
+    await store.delete("missing")
+    assert await store.get("k") is None
 
 
-def test_store_rejects_non_state_values() -> None:
+async def test_store_rejects_non_state_values() -> None:
     store = InMemoryBehaviorStateStore()
     with pytest.raises(StateStoreError):
-        store.put("k", "state")  # type: ignore[arg-type]
+        # pyrefly: ignore[bad-argument-type]
+        await store.put("k", "state")
     with pytest.raises(StateStoreError):
-        store.update("k", lambda current: "state")  # type: ignore[arg-type, return-value]
+        # pyrefly: ignore[bad-argument-type]
+        await store.update("k", lambda current: "state")
 
 
-def test_store_isolates_nested_metadata() -> None:
+async def test_store_isolates_nested_metadata() -> None:
     store = InMemoryBehaviorStateStore()
     payload = {"items": [1]}
-    store.put("k", _state(metadata={"payload": payload}))
+    await store.put("k", _state(metadata={"payload": payload}))
     payload["items"].append(2)
-    fetched = store.get("k")
+    fetched = await store.get("k")
     assert fetched is not None
-    fetched.metadata["payload"]["items"].append(3)  # type: ignore[index]
-    again = store.get("k")
+    # pyrefly: ignore[bad-index]
+    fetched.metadata["payload"]["items"].append(3)
+    again = await store.get("k")
     assert again is not None
     assert again.metadata == {"payload": {"items": [1]}}
 
 
-def test_store_clear_all_and_by_scope() -> None:
+async def test_store_clear_all_and_by_scope() -> None:
     store = InMemoryBehaviorStateStore()
-    store.put("a1", _state(scope="a"))
-    store.put("a2", _state(scope="a"))
-    store.put("b1", _state(scope="b"))
-    assert store.clear("a") == 2
-    assert store.get("a1") is None
-    assert store.get("b1") is not None
-    assert store.clear("missing") == 0
-    assert store.clear() == 1
-    assert store.get("b1") is None
+    await store.put("a1", _state(scope="a"))
+    await store.put("a2", _state(scope="a"))
+    await store.put("b1", _state(scope="b"))
+    assert await store.clear("a") == 2
+    assert await store.get("a1") is None
+    assert await store.get("b1") is not None
+    assert await store.clear("missing") == 0
+    assert await store.clear() == 1
+    assert await store.get("b1") is None
 
 
-def test_clear_drops_expired_states_without_counting_them() -> None:
+async def test_clear_drops_expired_states_without_counting_them() -> None:
     clock = ManualClock()
     store = InMemoryBehaviorStateStore(ttl=timedelta(seconds=10), clock=clock)
-    store.put("a-old", _state(scope="a"))
-    store.put("b-old", _state(scope="b"))
+    await store.put("a-old", _state(scope="a"))
+    await store.put("b-old", _state(scope="b"))
     clock.advance(seconds=11)
-    store.put("a-new", _state(scope="a"))
-    assert store.clear("a") == 1
-    assert store.clear() == 0
+    await store.put("a-new", _state(scope="a"))
+    assert await store.clear("a") == 1
+    assert await store.clear() == 0
     assert store._states == {}
 
 
@@ -156,35 +165,35 @@ def test_ttl_must_be_positive(ttl: timedelta) -> None:
         InMemoryBehaviorStateStore(ttl=ttl)
 
 
-def test_ttl_expiry_is_sliding_and_purgeable() -> None:
+async def test_ttl_expiry_is_sliding_and_purgeable() -> None:
     clock = ManualClock()
     store = InMemoryBehaviorStateStore(ttl=timedelta(seconds=10), clock=clock)
-    store.put("k", _state())
+    await store.put("k", _state())
     clock.advance(seconds=9)
-    store.update("k", lambda current: _state(count=2))
+    await store.update("k", lambda current: _state(count=2))
     clock.advance(seconds=9)
-    assert store.get("k") is not None, "writes refresh the TTL"
+    assert await store.get("k") is not None, "writes refresh the TTL"
     clock.advance(seconds=1)
-    assert store.get("k") is None
-    store.put("a", _state())
-    store.put("b", _state())
-    assert store.purge_expired() == 0
+    assert await store.get("k") is None
+    await store.put("a", _state())
+    await store.put("b", _state())
+    assert await store.purge_expired() == 0
     clock.advance(seconds=10)
-    assert store.purge_expired() == 2
+    assert await store.purge_expired() == 2
 
 
-def test_ttl_uses_wall_clock_by_default() -> None:
+async def test_ttl_uses_wall_clock_by_default() -> None:
     store = InMemoryBehaviorStateStore(ttl=timedelta(hours=1))
-    store.put("k", _state())
-    assert store.get("k") == _state()
-    assert store.purge_expired() == 0
+    await store.put("k", _state())
+    assert await store.get("k") == _state()
+    assert await store.purge_expired() == 0
 
 
-def test_expired_entries_are_purged_periodically() -> None:
+async def test_expired_entries_are_purged_periodically() -> None:
     clock = ManualClock()
     store = InMemoryBehaviorStateStore(ttl=timedelta(seconds=1), clock=clock)
-    store.put("stale", _state())
+    await store.put("stale", _state())
     clock.advance(seconds=2)
     for index in range(InMemoryBehaviorStateStore._PURGE_EVERY - 1):
-        store.put(f"fresh-{index}", _state())
+        await store.put(f"fresh-{index}", _state())
     assert "stale" not in store._states

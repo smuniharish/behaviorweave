@@ -19,7 +19,7 @@ def _engine() -> BehaviorEngine:
     )
 
 
-def test_engine_throughput_stays_within_budget() -> None:
+async def test_engine_throughput_stays_within_budget() -> None:
     engine = _engine()
     events = [
         BehaviorEvent.tool_call("get_alarm", {"machine": f"ETCH-{i % 3}"}, scope=f"t-{i % 100}")
@@ -28,13 +28,13 @@ def test_engine_throughput_stays_within_budget() -> None:
 
     started = time.perf_counter()
     for event in events:
-        engine.process(event)
+        await engine.process(event)
 
     # About 0.25 seconds on a laptop; the budget leaves room for slow shared runners.
     assert time.perf_counter() - started < 10.0
 
 
-def test_memory_stays_bounded_when_arguments_never_repeat() -> None:
+async def test_memory_stays_bounded_when_arguments_never_repeat() -> None:
     engine = _engine()
     events = [
         BehaviorEvent.tool_call("search", {"query": f"q-{i}", "page": i}, scope="thread-1")
@@ -43,9 +43,10 @@ def test_memory_stays_bounded_when_arguments_never_repeat() -> None:
 
     tracemalloc.start()
     for event in events:
-        engine.process(event)
+        await engine.process(event)
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    assert len(engine.store._states) == 1  # type: ignore[attr-defined]
+    # pyrefly: ignore[missing-attribute]
+    assert len(engine.store._states) == 1
     assert peak < 5_000_000

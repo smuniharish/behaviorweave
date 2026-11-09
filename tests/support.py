@@ -43,11 +43,11 @@ class RecordingStore(InMemoryBehaviorStateStore):
         self.latest: dict[tuple[str, str, str | None], BehaviorState] = {}
         self.update_calls = 0
 
-    def update(
+    async def update(
         self, key: str, fn: Callable[[BehaviorState | None], BehaviorState]
     ) -> BehaviorState:
         self.update_calls += 1
-        state = super().update(key, fn)
+        state = await super().update(key, fn)
         fingerprint = state.current_fingerprint if state.pattern_id == "event_frequency" else None
         self.latest[(state.scope, state.pattern_id, fingerprint)] = state
         return state

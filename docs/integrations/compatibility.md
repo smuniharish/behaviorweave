@@ -1,32 +1,31 @@
 # Compatibility
 
-| Component | Supported versions |
+| Component | Supported range |
 | --- | --- |
-| Python | 3.12, 3.13, and 3.14 |
-| `langchain` | 1.4.3 and later 1.x releases (the middleware uses the v1 `AgentMiddleware` API) |
-| `langchain-core` | 1.6.6 and later 1.x releases |
-| `langgraph` | 1.2.12 and later 1.x releases |
-| `langgraph-xai` | 1.0.0 and later 1.x releases |
+| Python | 3.12 through 3.15 |
+| LangChain | >=1.4.9,<2 |
+| langchain-core | >=1.7.6,<2 |
+| LangGraph | >=1.2.20,<2 |
+| agxai | >=1.0.2,<2 |
 
-`langchain`, `langchain-core`, `langgraph`, and `langgraph-xai` are installed with
-BehaviorWeave. The core engine imports none of them, so importing `behaviorweave` stays fast;
-each integration imports its framework only when you import that integration.
+These are installed with BehaviorWeave. Framework imports happen only in integrations,
+so importing the core does not import the frameworks.
 
-## Optional packages
+## Downstream packages
 
-Only the live examples need these. Install them with `uv sync --group examples`:
-
-| Package | Used by |
+| Package | Role and customization |
 | --- | --- |
-| `langchain-openai` | Every live example (any OpenAI-compatible endpoint). |
-| `langchain[mcp]` and `mcp` | `02_langchain_mcp_live.py` and the local MCP server. |
-| `langgraph-swarm` | `05_langgraph_swarm.py`. |
-| `deepagents` | `06_deepagents.py` and `07_deepagents_subagents.py`. |
+| agxai | Runtime configuration, registry, store, exporters, plugins, attribution, explanation, capture and disclosure policies; see [inventory](agxai.md#customization). |
+| LangChain / langchain-core | Application owns model, tools, agent, checkpointing, and middleware composition. |
+| LangGraph | Application owns routing, graph configuration, checkpointer, and BaseStore. |
+| deepagents | Example agent factory; pass BehaviorWeave through its middleware options. |
+| langgraph-swarm | Example handoffs; host reports transitions through the event adapter. |
+| langchain-openai | Example model; host configures model and OpenAI-compatible endpoint. |
+| mcp | Example server and transport; host chooses session scope/authentication. |
+| psycopg / psycopg-pool | PostgreSQL reference storage; inject a configured pool or use `connect`. |
+| redis | Redis reference storage; inject a configured async client or use `connect`. |
+| langgraph-checkpoint-postgres | Example LangGraph store; host owns connection and setup. |
+| OpenTelemetry SDK/exporter | Application supplies provider, processor, exporter, resource, and TLS/auth settings. |
 
-## Tested environment
-
-Every release is tested on Linux and Windows with Python 3.12, 3.13, and 3.14, both against
-the locked dependency set in `uv.lock` and against the lowest supported versions. Version
-1.0.0 was verified with `langchain` 1.4.3, `langchain-core` 1.6.6, `langgraph` 1.2.12,
-`langgraph-xai` 1.0.0, `langchain-openai` 1.6.7, `langgraph-swarm` 0.1.0, `deepagents`
-0.7.21, and `mcp` 2.3.0.
+Development tools and framework implementation dependencies are not runtime extension
+surfaces. Install `uv sync --all-groups` for the tested repository environment in `uv.lock`.

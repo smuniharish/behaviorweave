@@ -9,6 +9,8 @@ Run:
     uv run python examples/05_langgraph_swarm.py
 """
 
+import asyncio
+
 from langchain.agents import create_agent
 from langgraph_swarm import create_handoff_tool, create_swarm
 
@@ -23,7 +25,7 @@ PROMPT = (
 )
 
 
-def main() -> None:
+async def main() -> None:
     model = create_model()
     alarm_agent = create_agent(
         model,
@@ -48,7 +50,7 @@ def main() -> None:
     adapter = LangGraphEventAdapter()
 
     active = "alarm_agent"
-    for update in swarm.compile().stream(
+    async for update in swarm.compile().astream(
         {"messages": [{"role": "user", "content": PROMPT}]},
         config={"recursion_limit": 40},
         stream_mode="updates",
@@ -57,7 +59,7 @@ def main() -> None:
             if agent == active:
                 continue
             print(f"handoff: {active} -> {agent}")
-            decision = engine.process(adapter.handoff(active, agent, scope=SCOPE))
+            decision = await engine.process(adapter.handoff(active, agent, scope=SCOPE))
             active = agent
             if decision.intervention.kind.is_terminal:
                 print(f"BehaviorWeave stopped the swarm: {decision.intervention.reason}")
@@ -66,4 +68,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

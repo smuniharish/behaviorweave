@@ -9,6 +9,8 @@ Run:
     uv run python examples/08_failure_streak.py
 """
 
+import asyncio
+
 from langchain.tools import tool
 from langchain_core.tools import ToolException
 
@@ -23,7 +25,7 @@ from common import ask, guarded_agent, print_run
 
 
 @tool
-def query_inventory(sku: str) -> str:
+async def query_inventory(sku: str) -> str:
     """Query the inventory database for one SKU."""
     raise ToolException(f"Database timeout while reading {sku}.")
 
@@ -32,12 +34,12 @@ def query_inventory(sku: str) -> str:
 query_inventory.handle_tool_error = True
 
 
-def notify_operator(decision: InterventionDecision, event: BehaviorEvent) -> None:
+async def notify_operator(decision: InterventionDecision, event: BehaviorEvent) -> None:
     if decision.intervention.kind is InterventionType.ESCALATE:
         print(f"[operator page] {decision.intervention.reason} in {event.scope}")
 
 
-def main() -> None:
+async def main() -> None:
     engine = BehaviorEngine(
         policies=[
             PolicyRule(
@@ -57,7 +59,7 @@ def main() -> None:
         ]
     )
     agent = guarded_agent(engine, [query_inventory], on_decision=notify_operator)
-    result = ask(
+    result = await ask(
         agent,
         "Look up SKU A-100. If the query fails, retry it until it succeeds.",
         thread_id="example-08",
@@ -66,4 +68,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

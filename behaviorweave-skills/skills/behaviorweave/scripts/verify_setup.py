@@ -8,18 +8,19 @@ with status 1 if any check fails:
 
 from __future__ import annotations
 
+import asyncio
 import platform
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from importlib import metadata
 from typing import Any, TypedDict
 
 REQUIRED = {
-    "langchain": ((1, 4, 3), (2,)),
-    "langchain-core": ((1, 6, 6), (2,)),
-    "langgraph": ((1, 2, 12), (2,)),
-    "langgraph-xai": ((1, 0, 0), (2,)),
+    "langchain": ((1, 4, 9), (2,)),
+    "langchain-core": ((1, 7, 6), (2,)),
+    "langgraph": ((1, 2, 20), (2,)),
+    "agxai": ((1, 0, 2), (2,)),
 }
 OPTIONAL = ("langchain-openai", "deepagents", "langgraph-swarm", "mcp")
 
@@ -90,7 +91,7 @@ def ladder() -> Any:
     )
 
 
-def check_engine() -> None:
+async def check_engine() -> None:
     from behaviorweave import BehaviorEvent
 
     engine = ladder()
@@ -98,7 +99,7 @@ def check_engine() -> None:
         BehaviorEvent.tool_call("get_alarm", {"machine": "ETCH-3"}, scope="verify")
         for _ in range(3)
     ]
-    decisions = [engine.process(event) for event in events]
+    decisions = [await engine.process(event) for event in events]
     kinds = [decision.intervention.kind.value for decision in decisions]
     explanation = decisions[-1].explanation
     report(
@@ -107,14 +108,14 @@ def check_engine() -> None:
         and (explanation.count, explanation.threshold) == (3, 3),
         f"policy ladder decided {kinds}",
     )
-    replay = engine.process(events[-1])
+    replay = await engine.process(events[-1])
     report(
         replay.duplicate and replay.intervention == decisions[-1].intervention,
         "a redelivered event repeats its original intervention, marked duplicate",
     )
 
 
-def check_middleware() -> None:
+async def check_middleware() -> None:
     from langchain.agents import create_agent
     from langchain.messages import AIMessage
     from langchain.tools import tool
@@ -135,7 +136,7 @@ def check_middleware() -> None:
     runs: list[str] = []
 
     @tool
-    def get_alarm(machine: str) -> str:
+    async def get_alarm(machine: str) -> str:
         """Return the current alarm for one machine."""
         runs.append(machine)
         return f"{machine}: chamber-pressure warning"
@@ -144,7 +145,7 @@ def check_middleware() -> None:
         messages=iter([call("c1"), call("c2"), call("c3"), AIMessage(content="Done.")])
     )
     agent = create_agent(model, [get_alarm], middleware=[BehaviorWeaveMiddleware(ladder())])
-    result = agent.invoke(
+    result = await agent.ainvoke(
         {"messages": [{"role": "user", "content": "Inspect ETCH-3."}]},
         config={"configurable": {"thread_id": "verify-setup"}},
     )
@@ -165,7 +166,7 @@ class LoopState(TypedDict):
     stopped_by: str | None
 
 
-def check_langgraph() -> None:
+async def check_langgraph() -> None:
     from langgraph.graph import END, START, StateGraph
 
     from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
@@ -176,8 +177,8 @@ def check_langgraph() -> None:
         policies=[PolicyRule("loop-guard", "repeated_node_execution", 3, InterventionType.STOP)]
     )
 
-    def work(state: LoopState) -> dict[str, object]:
-        decision = engine.process(adapter.node("work", scope="verify-graph"))
+    async def work(state: LoopState) -> dict[str, object]:
+        decision = await engine.process(adapter.node("work", scope="verify-graph"))
         terminal = decision.intervention.kind.is_terminal
         return {
             "steps": state["steps"] + 1,
@@ -188,7 +189,7 @@ def check_langgraph() -> None:
     builder.add_node("work", work)
     builder.add_edge(START, "work")
     builder.add_conditional_edges("work", lambda state: END if state["stopped_by"] else "work")
-    final = builder.compile().invoke({"steps": 0, "stopped_by": None})
+    final = await builder.compile().ainvoke({"steps": 0, "stopped_by": None})
     report(
         final == {"steps": 3, "stopped_by": "loop-guard"},
         f"LangGraph loop stopped by policy after {final['steps']} steps",
@@ -201,37 +202,40 @@ class Order(TypedDict):
     items: list[str]
 
 
-def check_langgraph_xai() -> None:
+async def check_agxai() -> None:
+    from agxai import ProvenanceStore, StoreFilter
+    from agxai.core import ToolExecutionEvent
     from langchain.tools import tool
     from langgraph.graph import END, START, StateGraph
-    from langgraph_xai import ProvenanceStore, StoreFilter, XAIRuntime
-    from langgraph_xai.core import ToolExecutionEvent
 
     from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
-    from behaviorweave.integrations.langgraph_xai import LangGraphXAIEventAdapter
+    from behaviorweave.integrations.agxai import (
+        AgxaiEventAdapter,
+        create_agxai_runtime,
+        instrument_graph,
+    )
 
     @tool
-    def lookup(item: str) -> str:
+    async def lookup(item: str) -> str:
         """Look up one inventory item."""
         return f"{item}: in stock"
 
-    def check_stock(state: Order) -> dict[str, list[str]]:
-        return {"items": [lookup.invoke({"item": item}) for item in state["items"]]}
+    async def check_stock(state: Order) -> dict[str, list[str]]:
+        return {"items": [await lookup.ainvoke({"item": item}) for item in state["items"]]}
 
     builder = StateGraph(Order)
     builder.add_node("check_stock", check_stock)
     builder.add_edge(START, "check_stock")
     builder.add_edge("check_stock", END)
-    runtime = XAIRuntime(application_id="verify-setup", tenant_id="local", graph_id="orders")
-    graph = LangGraphXAIEventAdapter.instrument_graph(builder.compile(), runtime=runtime)
-    with runtime.collect_runs() as runs:
-        graph.invoke({"items": ["valve", "valve"]})
-    (run,) = runs
+    runtime = create_agxai_runtime(
+        application_id="verify-setup", tenant_id="local", graph_id="orders"
+    )
+    graph = instrument_graph(builder.compile(), runtime=runtime)
 
     async def recorded() -> list[Any]:
         store = runtime.registry.get(ProvenanceStore)
         if store is None:
-            return []
+            raise RuntimeError("agxai runtime has no provenance store")
         query = StoreFilter(
             application_id="verify-setup",
             tenant_id="local",
@@ -241,36 +245,39 @@ def check_langgraph_xai() -> None:
         return [record async for record in store.query(query)]
 
     try:
-        records = runtime.run_sync(recorded())
+        with runtime.collect_runs() as runs:
+            await graph.ainvoke({"items": ["valve", "valve"]})
+        (run,) = runs
+        records = await recorded()
     finally:
-        runtime.run_sync(runtime.close())
+        await runtime.close()
     auditor = BehaviorEngine(
         policies=[PolicyRule("busy", "event_frequency", 2, InterventionType.WARNING)]
     )
-    adapter = LangGraphXAIEventAdapter()
-    decisions = [auditor.process(adapter.event(record, scope="audit")) for record in records]
+    adapter = AgxaiEventAdapter()
+    decisions = [await auditor.process(adapter.event(record, scope="audit")) for record in records]
     explanation = decisions[-1].explanation if decisions else None
     report(
         len(records) == 2
         and decisions[-1].actionable
         and explanation is not None
         and explanation.provenance_ref == str(records[-1].id),
-        f"langgraph-xai provenance mapped: {len(records)} tool executions, "
+        f"agxai provenance mapped: {len(records)} tool executions, "
         "decision linked to its provenance record",
     )
 
 
-def main() -> int:
+async def main() -> int:
     if check_environment():
-        checks: tuple[Callable[[], None], ...] = (
+        checks: tuple[Callable[[], Awaitable[None]], ...] = (
             check_engine,
             check_middleware,
             check_langgraph,
-            check_langgraph_xai,
+            check_agxai,
         )
         for check in checks:
             try:
-                check()
+                await check()
             except Exception as error:  # report every failing check, then the summary
                 report(False, f"{check.__name__}: {type(error).__name__}: {error}")
     print("All checks passed." if not failures else f"{len(failures)} check(s) failed.")
@@ -278,4 +285,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

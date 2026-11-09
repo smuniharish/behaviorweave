@@ -7,6 +7,7 @@ Run from the repository root:
 ```bash
 uv run pytest tests/test_skill.py
 uvx --from skills-ref agentskills validate behaviorweave-skills/skills/behaviorweave
+uvx --from skills-ref agentskills validate behaviorweave-skills/skills/behaviorweave-extend
 ```
 
 `tests/test_skill.py` runs offline in continuous integration. It checks that:
@@ -58,3 +59,10 @@ Review that the description and instructions lead an agent to the right route fo
 | "Pause for a human when the agent is stuck." | Yes | A `human_review` rule on tool calls with `interrupt()` in `on_decision`, or a `pause` rule on outcomes with `release(scope)` from the application before resuming; a checkpointer either way. | Skipping duplicates around `interrupt()`, or releasing a halt from inside the hook. |
 | "Why does my intervention never fire?" | Yes | Troubleshooting: event types, identities, scopes, resets, cooldowns, and once-only. | Guessing from prompt text or editing state keys. |
 | "Classify whether my agent is behaving well with an LLM." | No | Not this package's purpose. | Inventing model-based detectors. |
+
+## Evaluation cases
+
+[`evals.json`](evals.json) contains positive and negative activation prompts for both skills
+and the expected implementation route. The test suite checks the case structure and both
+activation outcomes per skill; a host-agent review must verify actual activation and output.
+This is not a claim that model-based evaluations ran automatically.

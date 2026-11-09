@@ -8,6 +8,8 @@ Run:
     uv run python examples/12_policy_escalation.py
 """
 
+import asyncio
+
 from langchain.tools import tool
 
 from behaviorweave import (
@@ -21,12 +23,12 @@ from common import ask, guarded_agent, print_run
 
 
 @tool
-def run_expensive_report(region: str) -> str:
+async def run_expensive_report(region: str) -> str:
     """Run the quarterly cost report for one region."""
     return f"Cost report for {region}: spend is 4% over budget."
 
 
-def on_decision(decision: InterventionDecision, event: BehaviorEvent) -> None:
+async def on_decision(decision: InterventionDecision, event: BehaviorEvent) -> None:
     if decision.actionable:
         print(
             f"[host] {decision.intervention.kind.value} from policy "
@@ -36,7 +38,7 @@ def on_decision(decision: InterventionDecision, event: BehaviorEvent) -> None:
         print("[host] paging the on-call analyst for review")
 
 
-def main() -> None:
+async def main() -> None:
     engine = BehaviorEngine(
         policies=[
             PolicyRule("nudge", "repeated_tool_call", 2, InterventionType.NUDGE),
@@ -52,7 +54,7 @@ def main() -> None:
         ]
     )
     agent = guarded_agent(engine, [run_expensive_report], on_decision=on_decision)
-    result = ask(
+    result = await ask(
         agent,
         "Run run_expensive_report for region EMEA five times, one call at a time, and report "
         "the guidance you received after each call.",
@@ -62,4 +64,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

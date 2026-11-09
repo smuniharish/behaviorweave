@@ -7,9 +7,10 @@ decides what to do about it; that is the job of policies.
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 from .errors import PolicyConfigurationError
 from .events import BehaviorEvent, EventType, Outcome
@@ -55,31 +56,44 @@ class PatternObservation:
     reason: str
 
 
-@runtime_checkable
-class Pattern(Protocol):
-    """Protocol implemented by every pattern detector.
+class Pattern(ABC):
+    """Base class for every pattern detector.
+
+    Subclass it, give the subclass a ``pattern_id``, and implement `matches` and `observe`.
+    Patterns are typically frozen dataclasses whose ``pattern_id`` is a field.
+    `behaviorweave.testing.PatternContract` checks a pattern against this contract.
 
     Implementations must be deterministic, must advance state only through
     [`BehaviorStateStore.update`][behaviorweave.BehaviorStateStore.update], and must report a
     redelivered event (same ``event_id``) as not ``accepted`` without changing its count.
+
+    Attributes:
+        pattern_id: Unique, non-empty identifier that policies use to reference this pattern.
     """
 
-    @property
-    def pattern_id(self) -> str:
-        """Unique identifier that policies use to reference this pattern."""
-        ...
+    __slots__ = ()
 
+    if TYPE_CHECKING:
+        # Read-only to type checkers so frozen dataclass fields may implement it; at runtime
+        # it stays a plain annotation that any field or attribute satisfies.
+        @property
+        def pattern_id(self) -> str:
+            """Unique, non-empty identifier that policies use to reference this pattern."""
+
+    else:
+        pattern_id: str
+
+    @abstractmethod
     def matches(self, event: BehaviorEvent) -> bool:
         """Return whether this pattern observes ``event``."""
-        ...
 
-    def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
+    @abstractmethod
+    async def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
         """Apply ``event`` to the pattern's state in ``store`` and report the observation."""
-        ...
 
 
 @dataclass(frozen=True, slots=True)
-class ConsecutivePattern:
+class ConsecutivePattern(Pattern):
     """Counts consecutive events that share one identity.
 
     The count grows while the same [identity][behaviorweave.BehaviorEvent.identity] repeats and
@@ -102,7 +116,7 @@ class ConsecutivePattern:
         """Return whether ``event`` has one of the configured event types."""
         return event.event_type in self.event_types
 
-    def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
+    async def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
         """Advance the consecutive-identity count for ``event``'s scope."""
         fingerprint = event.identity()
         label = _label(event)
@@ -112,7 +126,7 @@ class ConsecutivePattern:
                 return current.count + 1, True
             return 1, False
 
-        return _observe(
+        return await _observe(
             self.pattern_id,
             event,
             store,
@@ -124,7 +138,7 @@ class ConsecutivePattern:
 
 
 @dataclass(frozen=True, slots=True)
-class StreakPattern:
+class StreakPattern(Pattern):
     """Counts consecutive outcomes, restarting when a resetting outcome arrives.
 
     An event's outcome is its ``outcome`` field; a `retry` event without an outcome counts as
@@ -158,7 +172,7 @@ class StreakPattern:
         outcome = _effective_outcome(event)
         return outcome is not None and (outcome in self.counts or outcome in self.resets)
 
-    def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
+    async def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
         """Extend, reset, or keep the streak for ``event``'s scope."""
         outcome = _effective_outcome(event)
         hit = outcome in self.counts
@@ -178,7 +192,7 @@ class StreakPattern:
                 return f"{label} streak reset"
             return f"{count} consecutive {label} {'outcome' if count == 1 else 'outcomes'}"
 
-        return _observe(
+        return await _observe(
             self.pattern_id,
             event,
             store,
@@ -190,7 +204,7 @@ class StreakPattern:
 
 
 @dataclass(frozen=True, slots=True)
-class OscillationPattern:
+class OscillationPattern(Pattern):
     """Counts consecutive back-and-forth transitions between two identities.
 
     The count grows each time an event repeats the identity seen two events earlier while
@@ -214,7 +228,7 @@ class OscillationPattern:
         """Return whether ``event`` has one of the configured event types."""
         return event.event_type in self.event_types
 
-    def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
+    async def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
         """Advance the oscillation count for ``event``'s scope."""
         fingerprint = event.identity()
         label = _label(event)
@@ -233,7 +247,7 @@ class OscillationPattern:
                 return "no oscillation"
             return f"{count} consecutive back-and-forth {_transitions(count)} (latest: '{label}')"
 
-        return _observe(
+        return await _observe(
             self.pattern_id,
             event,
             store,
@@ -245,7 +259,7 @@ class OscillationPattern:
 
 
 @dataclass(frozen=True, slots=True)
-class FrequencyPattern:
+class FrequencyPattern(Pattern):
     """Counts every occurrence of each event identity within a scope.
 
     Unlike streaks, the count never resets; it grows for as long as the scope's state is
@@ -267,7 +281,7 @@ class FrequencyPattern:
         """Return whether ``event`` has one of the configured event types."""
         return event.event_type in self.event_types
 
-    def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
+    async def observe(self, event: BehaviorEvent, store: BehaviorStateStore) -> PatternObservation:
         """Increment the occurrence count of ``event``'s identity in its scope."""
         fingerprint = f"{event.event_type.value}/{event.identity()}"
         label = _label(event)
@@ -275,7 +289,7 @@ class FrequencyPattern:
         def step(current: BehaviorState | None) -> _Step:
             return (current.count + 1, True) if current is not None else (1, False)
 
-        return _observe(
+        return await _observe(
             self.pattern_id,
             event,
             store,
@@ -286,7 +300,7 @@ class FrequencyPattern:
         )
 
 
-def _observe(
+async def _observe(
     pattern_id: str,
     event: BehaviorEvent,
     store: BehaviorStateStore,
@@ -306,7 +320,7 @@ def _observe(
         count, continues = step(current)
         return _advance(current, pattern_id, event, fingerprint, count, continues)
 
-    state = store.update(key, apply)
+    state = await store.update(key, apply)
     return PatternObservation(
         pattern_id=pattern_id,
         scope=event.scope,

@@ -9,6 +9,8 @@ Run:
     uv run python examples/07_deepagents_subagents.py
 """
 
+import asyncio
+
 from deepagents import SubAgent, create_deep_agent
 
 from behaviorweave import BehaviorEngine
@@ -24,7 +26,7 @@ from common import (
 )
 
 
-def main() -> None:
+async def main() -> None:
     model = create_model()
     engine = BehaviorEngine(policies=repeat_guard_policies())
     researcher = SubAgent(
@@ -47,7 +49,7 @@ def main() -> None:
         ),
         middleware=[BehaviorWeaveMiddleware(engine, scope="example-07/lead"), OmitMessageNames()],
     )
-    result = ask(
+    result = await ask(
         agent,
         "Investigate the ETCH-3 pressure alarm and recommend a next action.",
         thread_id="example-07",
@@ -56,4 +58,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

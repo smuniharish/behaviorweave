@@ -5,7 +5,7 @@ monkey-patches LangChain.
 
 ## BehaviorWeaveMiddleware
 
-[`BehaviorWeaveMiddleware`][behaviorweave.integrations.langchain.BehaviorWeaveMiddleware] is
+[`BehaviorWeaveMiddleware`](../api/index.md#behaviorweave.integrations.langchain.BehaviorWeaveMiddleware) is
 a LangChain agent middleware that guards every tool call of a `create_agent` agent:
 
 ![Sequence of a guarded tool call](../assets/diagrams/guarded-tool-call.png)
@@ -29,7 +29,7 @@ from behaviorweave.integrations.langchain import BehaviorWeaveMiddleware
 
 
 @tool
-def get_alarm(machine: str) -> str:
+async def get_alarm(machine: str) -> str:
     """Return the current alarm for a machine."""
     return f"{machine}: chamber-pressure warning"
 
@@ -62,9 +62,11 @@ engine = BehaviorEngine(
 agent = create_agent(
     model, [get_alarm], middleware=[BehaviorWeaveMiddleware(engine)]
 )
-agent.invoke(
-    {"messages": [{"role": "user", "content": "Inspect ETCH-3."}]},
-    config={"configurable": {"thread_id": "incident-42"}},
+(
+    await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "Inspect ETCH-3."}]},
+        config={"configurable": {"thread_id": "incident-42"}},
+    )
 )
 ```
 
@@ -87,7 +89,7 @@ A guarded transcript looks like this:
 | `scope` | LangGraph `thread_id` | A fixed scope string, or a callable that derives the scope from the `ToolCallRequest`. Without either, the run must provide a `thread_id`. |
 | `block_on` | `stop`, `pause` | Intervention kinds that prevent tool calls from running. See [Halts](#halts) for decisions triggered by outcomes. |
 | `track_outcomes` | `True` | Record tool results as `success` or `failure` outcomes. |
-| `on_decision` | `None` | Hook receiving every decision and its event; raise from it, or call `interrupt()`, to stop or pause the run. |
+| `on_decision` | `None` | Sync or async hook receiving every decision and its event; raise from it, or call `interrupt()`, to stop or pause the run. |
 | `formatter` | `default_guidance` | Renders a decision as text for the model. |
 | `name` | class name | Set when one agent uses several instances. |
 
@@ -136,7 +138,7 @@ middleware = BehaviorWeaveMiddleware(engine, on_decision=require_approval)
 ```
 
 When a `human_review` decision arrives, the run pauses. Resume it with
-`agent.invoke(Command(resume="approve"), config)` to run the tool; any other answer raises
+`await agent.ainvoke(Command(resume="approve"), config)` to run the tool; any other answer raises
 `Rejected`. On resume, LangGraph re-executes the tool step and BehaviorWeave returns the
 original decision, so the hook runs again and `interrupt()` returns the reviewer's answer.
 Do not skip duplicate decisions in such a hook.
@@ -149,12 +151,13 @@ Instead, the middleware *halts* the scope: every later tool call in that scope i
 with the decision's guidance until you lift the halt.
 
 ```python
-middleware.release("incident-42")  # True if the scope was halted
+await middleware.release("incident-42")
 ```
 
-Halts are kept in memory by the middleware instance, for up to 10,000 scopes, and reset when
-the process restarts. For advisory outcome policies, such as escalating a failure streak to
-an operator, use a kind outside `block_on`.
+Halts live in the engine's state store, keyed by scope and middleware name. A durable store
+preserves them across restarts and middleware instances with the same name; its TTL also
+applies to halts. Inspect with `await middleware.halted(scope)`. For advisory outcome policies,
+such as escalating a failure streak to an operator, use a kind outside `block_on`.
 
 To pause the run for an operator as well, call `interrupt()` from `on_decision`, and lift the
 halt from your application, before resuming the run, when the operator approves:
@@ -171,8 +174,8 @@ def pause_for_operator(
 ```python
 from langgraph.types import Command
 
-middleware.release("incident-42")  # the operator approved
-agent.invoke(Command(resume="approved"), config)
+(await middleware.release("incident-42"))  # the operator approved
+(await agent.ainvoke(Command(resume="approved"), config))
 ```
 
 Resuming re-runs the interrupted step, so the tool runs again. The halt never blocks the call
@@ -206,7 +209,7 @@ refusing the scope's tool calls, resume without releasing the halt.
 
 When you control the tool lifecycle yourself, such as in a callback handler or a custom
 retry loop, build events with
-[`LangChainEventAdapter`][behaviorweave.integrations.langchain.LangChainEventAdapter]:
+[`LangChainEventAdapter`](../api/index.md#behaviorweave.integrations.langchain.LangChainEventAdapter):
 
 ```python
 from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
@@ -218,7 +221,7 @@ engine = BehaviorEngine(
 )
 
 for attempt in range(1, 10):
-    decision = engine.process(
+    decision = await engine.process(
         adapter.retry(scope="order-7", tool_name="charge_card")
     )
     if decision.intervention.kind.is_terminal:

@@ -9,6 +9,8 @@ Run:
     uv run python examples/10_oscillation.py
 """
 
+import asyncio
+
 from langchain.agents import create_agent
 from langchain.tools import tool
 
@@ -39,8 +41,8 @@ engine = BehaviorEngine(
 adapter = LangGraphEventAdapter()
 
 
-def transfer(target: str) -> str:
-    decision = engine.process(adapter.handoff("supervisor", target, scope=SCOPE))
+async def transfer(target: str) -> str:
+    decision = await engine.process(adapter.handoff("supervisor", target, scope=SCOPE))
     if decision.intervention.kind.is_terminal:
         return default_guidance(decision)
     note = f"\n{default_guidance(decision)}" if decision.actionable else ""
@@ -48,18 +50,18 @@ def transfer(target: str) -> str:
 
 
 @tool
-def transfer_to_analyst() -> str:
+async def transfer_to_analyst() -> str:
     """Transfer the case to the analyst."""
-    return transfer("analyst")
+    return await transfer("analyst")
 
 
 @tool
-def transfer_to_researcher() -> str:
+async def transfer_to_researcher() -> str:
     """Transfer the case to the researcher."""
-    return transfer("researcher")
+    return await transfer("researcher")
 
 
-def main() -> None:
+async def main() -> None:
     agent = create_agent(
         create_model(),
         [transfer_to_analyst, transfer_to_researcher],
@@ -68,7 +70,7 @@ def main() -> None:
             "follow them exactly."
         ),
     )
-    result = ask(
+    result = await ask(
         agent,
         "Transfer the case in this exact order, one transfer at a time: analyst, researcher, "
         "analyst, researcher, analyst. Then report the outcome.",
@@ -78,4 +80,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

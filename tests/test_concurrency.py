@@ -12,9 +12,16 @@ WORKERS = 32
 def _run_concurrently(engine: BehaviorEngine, events: list[BehaviorEvent]) -> list[str]:
     barrier = threading.Barrier(WORKERS)
 
+    async def process(index: int) -> list[str]:
+        return [
+            (await engine.process(event)).intervention.kind.value
+            for event in events[index::WORKERS]
+        ]
+
+    # Each worker thread runs its own event loop, so one engine is shared across loops.
     def worker(index: int) -> list[str]:
         barrier.wait()
-        return [engine.process(event).intervention.kind.value for event in events[index::WORKERS]]
+        return asyncio.run(process(index))
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         return [kind for kinds in pool.map(worker, range(WORKERS)) for kind in kinds]
@@ -72,5 +79,5 @@ async def test_async_fan_out_shares_one_engine() -> None:
         state_store=store,
     )
     events = [BehaviorEvent.tool_call("t", scope=f"conv-{i % 4}") for i in range(200)]
-    await asyncio.gather(*(asyncio.to_thread(engine.process, event) for event in events))
+    await asyncio.gather(*(engine.process(event) for event in events))
     assert [store.count(f"conv-{i}", "repeated_tool_call") for i in range(4)] == [50] * 4

@@ -1,0 +1,38 @@
+[
+  {
+    "skill": "behaviorweave",
+    "prompt": "My LangChain agent keeps calling the same tool. Nudge it and block the third call.",
+    "activate": true,
+    "expected": "Use repeated_tool_call policies and BehaviorWeaveMiddleware; await agent.ainvoke with a thread_id."
+  },
+  {
+    "skill": "behaviorweave",
+    "prompt": "An operator approved this paused conversation, but tools are still blocked.",
+    "activate": true,
+    "expected": "Inspect and release the persisted middleware halt asynchronously before resuming; preserve interrupt replay."
+  },
+  {
+    "skill": "behaviorweave",
+    "prompt": "Use an LLM to classify whether the agent's tone is friendly.",
+    "activate": false,
+    "expected": "Do not invent a model-based detector; outside the deterministic event-policy scope."
+  },
+  {
+    "skill": "behaviorweave-extend",
+    "prompt": "Implement a Redis BehaviorStateStore shared across service replicas.",
+    "activate": true,
+    "expected": "Subclass the async ABC, use WATCH/MULTI atomic updates, inject the client, and run contracts plus independent-client races."
+  },
+  {
+    "skill": "behaviorweave-extend",
+    "prompt": "Add a custom pattern for repeated destructive operations.",
+    "activate": true,
+    "expected": "Subclass Pattern, preserve state via replace, deduplicate IDs, isolate scopes, and run PatternContract."
+  },
+  {
+    "skill": "behaviorweave-extend",
+    "prompt": "Change the nudge threshold from two to three.",
+    "activate": false,
+    "expected": "Use behaviorweave integration guidance and change PolicyRule; no new extension."
+  }
+]

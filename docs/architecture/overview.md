@@ -31,7 +31,7 @@ host does about it*:
 | --- | --- |
 | LangGraph | Graph execution, routing, persistence, interrupts. |
 | LangChain | Agent, model, and tool abstractions; the middleware lifecycle. |
-| langgraph-xai | Execution context, provenance, evidence, and explanation records. |
+| agxai | Execution context, provenance, evidence, and explanation records. |
 | BehaviorWeave | Event normalization, fingerprints, patterns, state, policies, decisions, audit records. |
 | Your application | Choosing scopes, configuring policies, and applying decisions. |
 
@@ -51,13 +51,14 @@ host does about it*:
   wins, chosen by priority, terminal kind, count, and declaration order.
 - **You pay only for what you use.** Only patterns referenced by a policy are evaluated;
   unused patterns cost nothing and keep no state.
-- **Privacy is built in.** Tool calls are identified by name and a SHA-256 digest of their
-  arguments; raw argument values and model reasoning are never stored.
-- **Integrations use public framework APIs.** LangChain, LangGraph, and langgraph-xai are
+- **Privacy boundaries are explicit.** Tool identities use a SHA-256 argument digest.
+  Raw arguments can remain in event metadata and audit records; redact them at the host
+  boundary. Private model reasoning is never captured.
+- **Integrations use public framework APIs.** LangChain, LangGraph, and agxai are
   integrated at their public boundaries without monkey-patching, and LangGraph Swarm and Deep
   Agents remain optional.
-- **The state-store boundary is minimal.** A durable store implements one atomic `update`
-  operation, so new backends never require engine changes.
+- **The state-store boundary is explicit.** An async ABC provides get, atomic update, put,
+  delete, and lifecycle operations, so new backends never require engine changes.
 
 ## Goals
 
@@ -77,5 +78,5 @@ are not required to use it.
 ## Further reading
 
 - [Failure semantics](failure-strategy.md): which errors are raised, and when.
-- [State and concurrency](../state.md): the guarantees under concurrent use.
+- [State and concurrency](../guide/concepts/state.md): the guarantees under concurrent use.
 - [Security and privacy](../security.md): what BehaviorWeave stores and how to keep it safe.

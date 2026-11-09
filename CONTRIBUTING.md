@@ -20,7 +20,7 @@ and the type checker need.
 
 ## Quality gates
 
-CI runs every check below on Linux and Windows with Python 3.12, 3.13, and 3.14, and once
+CI runs tests on Linux and Windows with Python 3.12 through 3.15, and once
 against the lowest supported dependency versions. Run them before opening a pull request:
 
 ```bash
@@ -28,7 +28,8 @@ uv run pytest --cov            # 100% line and branch coverage; warnings are err
 uv run ruff check .
 uv run ruff format --check .
 uv run pyrefly check
-uv run mkdocs build --strict
+uv run zensical build --strict
+uv run python scripts/check_site_links.py
 uv run python scripts/render_diagrams.py --check
 uv build
 ```
@@ -58,11 +59,11 @@ Set `HYPOTHESIS_PROFILE=ci` to run the property-based tests with more examples, 
 
 ## Documentation and diagrams
 
-- Preview the documentation with `uv run mkdocs serve`.
-- Diagrams are written in Mermaid under `docs/diagrams/` and rendered to PNG under
+- Preview the documentation with `uv run zensical serve`.
+- Diagrams are written in Mermaid under `diagrams/` and rendered to PNG under
   `docs/assets/diagrams/`. After editing a `.mmd` file, run
   `uv run python scripts/render_diagrams.py` (requires Node.js) and commit the sources, the
-  images, and `docs/diagrams/manifest.json`.
+  images, and `diagrams/manifest.json`.
 - Document every public symbol with a Google-style docstring; the API reference is generated
   from them. Keep internal helpers underscored so they stay out of the reference.
 
@@ -78,6 +79,9 @@ When public API or documented behavior changes, update the skill and follow
 - Keep detection (patterns), decisions (policies), and execution (the host) separate.
 - Integrations use public framework APIs only; never monkey-patch framework internals.
 - Prefer explicit, validated configuration over silent fallbacks.
+- Extension boundaries are ABCs. Keep I/O async and state-transform callbacks pure.
+- Run reference-store contracts with `BEHAVIORWEAVE_POSTGRES_URL` and
+  `BEHAVIORWEAVE_REDIS_URL` pointing to isolated test services.
 
 ## Pull requests
 
@@ -87,6 +91,6 @@ entry to `CHANGELOG.md` for user-visible changes.
 ## Releases
 
 Releases are published to PyPI by the `Release` workflow when a GitHub release is published.
-The release tag must be `v` followed by the version in `src/behaviorweave/__init__.py`, and
+The release tag must be `v` followed by `uv version --short` from `pyproject.toml`, and
 the `CHANGELOG.md` entry for that version must be complete. Publishing uses PyPI trusted
 publishing, so no API token is stored in the repository.

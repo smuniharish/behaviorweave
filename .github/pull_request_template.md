@@ -27,8 +27,8 @@ validate your change quickly.
 - [ ] `uv run ruff check .` and `uv run ruff format --check .` pass.
 - [ ] `uv run pyrefly check` passes.
 - [ ] `uv run pytest --cov` passes with 100% line and branch coverage.
-- [ ] `uv run mkdocs build --strict` passes, and diagrams were re-rendered if a
-      `docs/diagrams/*.mmd` source changed.
+- [ ] `uv run zensical build --strict` and `uv run python scripts/check_site_links.py`
+      pass, and diagrams were re-rendered if a `diagrams/*.mmd` source changed.
 - [ ] Documentation and the Agent Skill were updated if this changes public API or
       documented behavior.
 - [ ] `CHANGELOG.md` has an entry if this is a user-visible change.

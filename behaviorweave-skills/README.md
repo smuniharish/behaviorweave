@@ -1,6 +1,6 @@
-# BehaviorWeave Agent Skill
+# BehaviorWeave Agent Skills
 
-This directory distributes the `behaviorweave` Agent Skill: instructions, references, a setup
+This directory distributes the `behaviorweave` and `behaviorweave-extend` skills: instructions, references, a setup
 check, and a test template that teach coding agents to integrate the `behaviorweave` package
 correctly. It is not part of the Python package and adds no runtime behavior.
 
@@ -13,6 +13,7 @@ correctly. It is not part of the Python package and adds no runtime behavior.
 | [`skills/behaviorweave/scripts/verify_setup.py`](skills/behaviorweave/scripts/verify_setup.py) | An offline check of the project's environment, a guarded agent, a guarded graph, and provenance mapping |
 | [`skills/behaviorweave/assets/test_behavior_policy.py`](skills/behaviorweave/assets/test_behavior_policy.py) | A pytest template for testing an application's behavior policies |
 | [`validation/`](validation/) | How the skill is validated and reviewed |
+| [`skills/behaviorweave-extend/SKILL.md`](skills/behaviorweave-extend/SKILL.md) | Async ABC storage, pattern, and audit extensions with conformance tests |
 
 ## Format
 
@@ -24,6 +25,7 @@ The skill follows the [Agent Skills specification](https://agentskills.io/specif
 - `SKILL.md` stays short. Details live in `references/`, one level deep, so an agent loads
   them only when a task needs them.
 - Scripts and assets are referenced by paths relative to the skill directory.
+- Root `skills.sh.json` points discovery to this shared skills directory.
 
 Every Agent Skills host reads the same directory, so there is no separate copy for Claude
 Code, Codex, Cursor, or GitHub Copilot. Installation is described in the

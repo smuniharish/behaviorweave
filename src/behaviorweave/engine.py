@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from types import TracebackType
+from typing import Self
 
 from ._util import freeze
+from .audit import AuditSink
 from .errors import PolicyConfigurationError
 from .events import BehaviorEvent
 from .interventions import AuditRecord, Intervention, InterventionDecision, InterventionType
@@ -13,10 +16,7 @@ from .patterns import Pattern, PatternObservation, built_in_patterns
 from .policies import PolicyEngine, PolicyRule, _decision, _suppression_reason
 from .state import _EVENT_RETENTION, BehaviorState, BehaviorStateStore, InMemoryBehaviorStateStore
 
-__all__ = ["AuditSink", "BehaviorEngine"]
-
-type AuditSink = Callable[[AuditRecord], None]
-"""Callable that receives one [`AuditRecord`][behaviorweave.AuditRecord] per processed event."""
+__all__ = ["BehaviorEngine"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,9 +29,9 @@ class _Candidate:
 class BehaviorEngine:
     """Detects behavioral patterns in events and returns intervention decisions.
 
-    The engine is thread-safe: all state transitions go through the state store's atomic
-    ``update``. Only patterns referenced by at least one policy are evaluated, so unused
-    patterns cost nothing and keep no state.
+    The engine is safe to share between tasks, threads, and event loops: every state
+    transition goes through the state store's atomic ``update``. Only patterns referenced by
+    at least one policy are evaluated, so unused patterns cost nothing and keep no state.
 
     For each event the engine observes every matching pattern, evaluates its policies, and
     returns the strongest decision: actionable over `noop`, then higher rule ``priority``,
@@ -48,6 +48,8 @@ class BehaviorEngine:
     Events that no policy's pattern observes leave no state behind, so processing them again
     returns an unmarked `noop`.
 
+    The engine is an async context manager: leaving the ``async with`` block calls `close`.
+
     Args:
         policies: Rules mapping pattern thresholds to interventions.
         patterns: Pattern detectors to provide. ``None`` selects
@@ -55,13 +57,15 @@ class BehaviorEngine:
             provides none.
         state_store: Store for pattern state. ``None`` creates an
             [`InMemoryBehaviorStateStore`][behaviorweave.InMemoryBehaviorStateStore].
-        audit_sink: Optional callable receiving an [`AuditRecord`][behaviorweave.AuditRecord]
-            for every processed event. It runs after the decision is recorded; if it raises,
-            the exception propagates, and processing the same event again returns the decision.
+        audit_sink: Optional [`AuditSink`][behaviorweave.AuditSink] receiving an
+            [`AuditRecord`][behaviorweave.AuditRecord] for every processed event. It runs after
+            the decision is recorded; if it raises, the exception propagates, and processing
+            the same event again returns the decision.
 
     Raises:
-        PolicyConfigurationError: If pattern IDs repeat, an item is not a pattern, or a policy
-            references a pattern the engine does not provide.
+        PolicyConfigurationError: If pattern IDs repeat or are empty, an item is not a
+            ``Pattern``, the store is not a ``BehaviorStateStore``, the sink is not an
+            ``AuditSink``, or a policy references a pattern the engine does not provide.
     """
 
     def __init__(
@@ -72,6 +76,14 @@ class BehaviorEngine:
         state_store: BehaviorStateStore | None = None,
         audit_sink: AuditSink | None = None,
     ) -> None:
+        if state_store is not None and not isinstance(state_store, BehaviorStateStore):
+            raise PolicyConfigurationError(
+                f"state_store must be a BehaviorStateStore, not {type(state_store).__name__}"
+            )
+        if audit_sink is not None and not isinstance(audit_sink, AuditSink):
+            raise PolicyConfigurationError(
+                f"audit_sink must be an AuditSink, not {type(audit_sink).__name__}"
+            )
         self.store: BehaviorStateStore = (
             state_store if state_store is not None else InMemoryBehaviorStateStore()
         )
@@ -86,11 +98,16 @@ class BehaviorEngine:
         for pattern in self.patterns:
             if not isinstance(pattern, Pattern):
                 raise PolicyConfigurationError(
-                    f"{type(pattern).__name__} does not implement the Pattern protocol"
+                    f"{type(pattern).__name__} is not a Pattern; subclass behaviorweave.Pattern"
                 )
-            if pattern.pattern_id in provided:
-                raise PolicyConfigurationError(f"duplicate pattern_id {pattern.pattern_id!r}")
-            provided.add(pattern.pattern_id)
+            pattern_id = getattr(pattern, "pattern_id", None)
+            if not isinstance(pattern_id, str) or not pattern_id.strip():
+                raise PolicyConfigurationError(
+                    f"{type(pattern).__name__}.pattern_id must be a non-empty string"
+                )
+            if pattern_id in provided:
+                raise PolicyConfigurationError(f"duplicate pattern_id {pattern_id!r}")
+            provided.add(pattern_id)
         unknown = sorted(self.policy_engine.pattern_ids - provided)
         if unknown:
             raise PolicyConfigurationError(
@@ -107,7 +124,42 @@ class BehaviorEngine:
         """The configured policy rules, in declaration order."""
         return self.policy_engine.rules
 
-    def process(self, event: BehaviorEvent) -> InterventionDecision:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.close()
+
+    async def flush(self) -> None:
+        """Flush the audit sink, if any."""
+        if self.audit_sink is not None:
+            await self.audit_sink.flush()
+
+    async def close(self) -> None:
+        """Close the audit sink and the state store.
+
+        Both are attempted even if the first fails; the first failure is raised afterwards.
+        """
+        failure: BaseException | None = None
+        if self.audit_sink is not None:
+            try:
+                await self.audit_sink.close()
+            except Exception as exc:
+                failure = exc
+        try:
+            await self.store.close()
+        except Exception:
+            if failure is None:
+                raise
+        if failure is not None:
+            raise failure
+
+    async def process(self, event: BehaviorEvent) -> InterventionDecision:
         """Process one event and return the decision for the host to apply.
 
         Processing an event whose ``event_id`` was already processed leaves state unchanged
@@ -125,14 +177,14 @@ class BehaviorEngine:
         candidates: list[_Candidate] = []
         for pattern in self._active:
             if pattern.matches(event):
-                observation = pattern.observe(event, self.store)
+                observation = await pattern.observe(event, self.store)
                 if observation.accepted:
                     rule, decision = self.policy_engine._select(observation)
                 else:
                     rule, decision = self._replay(event, observation)
                 candidates.append(_Candidate(observation, rule, decision))
 
-        chosen = self._resolve(event, candidates)
+        chosen = await self._resolve(event, candidates)
         if chosen is None:
             decision = InterventionDecision(Intervention(InterventionType.NOOP, scope=event.scope))
         else:
@@ -143,7 +195,7 @@ class BehaviorEngine:
                     explanation=replace(decision.explanation, provenance_ref=event.provenance_ref),
                 )
         if self.audit_sink is not None:
-            self.audit_sink(
+            await self.audit_sink.write(
                 AuditRecord(
                     event=event,
                     pattern=chosen.observation.pattern_id if chosen is not None else None,
@@ -178,7 +230,9 @@ class BehaviorEngine:
             duplicate=True,
         )
 
-    def _resolve(self, event: BehaviorEvent, candidates: list[_Candidate]) -> _Candidate | None:
+    async def _resolve(
+        self, event: BehaviorEvent, candidates: list[_Candidate]
+    ) -> _Candidate | None:
         fallback: _Candidate | None = None
         # sorted() is stable, so ties keep pattern declaration order.
         for candidate in sorted(candidates, key=_rank, reverse=True):
@@ -188,14 +242,14 @@ class BehaviorEngine:
             if (
                 candidate.decision.duplicate
                 or rule is None
-                or self._commit(event, candidate.observation, rule)
+                or await self._commit(event, candidate.observation, rule)
             ):
                 return candidate
-            # Another thread claimed the policy first; report this one as suppressed.
+            # Another task claimed the policy first; report this one as suppressed.
             fallback = fallback or _suppressed(candidate, event)
         return fallback
 
-    def _commit(
+    async def _commit(
         self, event: BehaviorEvent, observation: PatternObservation, rule: PolicyRule
     ) -> bool:
         record = (event.event_id, rule.policy_id, observation.count, observation.reason)
@@ -222,7 +276,7 @@ class BehaviorEngine:
                 version=base.version + 1,
             )
 
-        self.store.update(observation.state_key, claim)
+        await self.store.update(observation.state_key, claim)
         return claimed
 
 

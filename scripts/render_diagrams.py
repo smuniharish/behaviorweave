@@ -1,9 +1,9 @@
-"""Render the Mermaid diagrams in docs/diagrams to PNG images in docs/assets/diagrams.
+"""Render the Mermaid diagrams in diagrams/ to PNG images in docs/assets/diagrams.
 
 Rendering requires Node.js (``npx``). A locally installed Chrome or Edge is used when one is
 found, so no browser download is needed; set ``PUPPETEER_EXECUTABLE_PATH`` to choose another
 browser. Every render records a fingerprint of its inputs and of the image it produced in
-``docs/diagrams/manifest.json``, so ``--check`` can verify without Node.js that each image is
+``diagrams/manifest.json``, so ``--check`` can verify without Node.js that each image is
 current and that no image or source is orphaned.
 
 Usage:
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ROOT / "docs" / "diagrams"
+SOURCES = ROOT / "diagrams"
 OUTPUT = ROOT / "docs" / "assets" / "diagrams"
 CONFIG = SOURCES / "mermaid-config.json"
 MANIFEST = SOURCES / "manifest.json"

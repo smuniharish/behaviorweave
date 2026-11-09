@@ -9,6 +9,7 @@ Run:
     uv run python examples/03_langgraph_custom_graph.py
 """
 
+import asyncio
 from typing import TypedDict
 
 from langchain_core.runnables import RunnableConfig
@@ -43,29 +44,29 @@ adapter = LangGraphEventAdapter()
 model = create_model()
 
 
-def _guard(node: str, config: RunnableConfig) -> str | None:
+async def _guard(node: str, config: RunnableConfig) -> str | None:
     scope = str(config.get("configurable", {}).get("thread_id", "report"))
-    decision = engine.process(adapter.node(node, scope=scope))
+    decision = await engine.process(adapter.node(node, scope=scope))
     return decision.intervention.message if decision.intervention.kind.is_terminal else None
 
 
-def write(state: ReportState, config: RunnableConfig) -> dict[str, object]:
-    if stopped := _guard("write", config):
+async def write(state: ReportState, config: RunnableConfig) -> dict[str, object]:
+    if stopped := await _guard("write", config):
         return {"stopped_by": stopped}
     prompt = (
         f"Write a three-sentence incident report for: {state['request']}\n"
         f"Previous draft: {state['draft'] or 'none'}\n"
         f"Reviewer feedback: {state['feedback'] or 'none'}"
     )
-    return {"draft": model.invoke(prompt).text}
+    return {"draft": (await model.ainvoke(prompt)).text}
 
 
-def review(state: ReportState) -> dict[str, object]:
+async def review(state: ReportState) -> dict[str, object]:
     prompt = (
         "You are an exacting reviewer. Reply with exactly one concrete improvement for this "
         f"incident report. Never reply APPROVED unless it is flawless.\n\n{state['draft']}"
     )
-    return {"feedback": model.invoke(prompt).text}
+    return {"feedback": (await model.ainvoke(prompt)).text}
 
 
 def after_write(state: ReportState) -> str:
@@ -76,7 +77,7 @@ def after_review(state: ReportState) -> str:
     return END if "APPROVED" in state["feedback"].upper() else "write"
 
 
-def main() -> None:
+async def main() -> None:
     builder = StateGraph(ReportState)
     builder.add_node("write", write)
     builder.add_node("review", review)
@@ -84,7 +85,7 @@ def main() -> None:
     builder.add_conditional_edges("write", after_write)
     builder.add_conditional_edges("review", after_review)
     graph = builder.compile()
-    result = graph.invoke(
+    result = await graph.ainvoke(
         {
             "request": "ETCH-3 chamber-pressure alarm",
             "draft": "",
@@ -98,4 +99,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

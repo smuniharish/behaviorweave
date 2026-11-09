@@ -42,7 +42,7 @@ class RuleModel(BaseChatModel):
     def _llm_type(self) -> str:
         return "rule-based"
 
-    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> RuleModel:  # type: ignore[override]
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> RuleModel:
         names = tuple(convert_to_openai_tool(tool)["function"]["name"] for tool in tools)
         return self.model_copy(update={"tools": names})
 
@@ -138,6 +138,11 @@ def conversation_b_is_unguided(output: str) -> None:
     first, second = output.split("Conversation B")
     assert "[BehaviorWeave:nudge]" in first
     assert "[BehaviorWeave:" not in second
+
+
+def audited_once(output: str) -> None:
+    assert_count(output, "audit:", 1)
+    assert_count(output, "recorded in run", 1)
 
 
 EXAMPLE_RUNS: dict[str, tuple[Responder, list[str], Callable[[str], None] | None]] = {
@@ -253,9 +258,49 @@ EXAMPLE_RUNS: dict[str, tuple[Responder, list[str], Callable[[str], None] | None
     ),
     "15_complete_agent_guard.py": (
         calls(("get_alarm", MACHINE), ("get_alarm", MACHINE), ("search_incident_history", MACHINE)),
-        ["Answer:\nDone.", "audit: 'get_alarm' occurred 2 times (provenance "],
-        lambda output: assert_count(output, "audit:", 1),
+        [
+            "Answer:\nDone.",
+            "audit: 'get_alarm' occurred 2 consecutive times (tool.execution, provenance ",
+            ": nudge by policy repeat-nudge",
+        ],
+        audited_once,
     ),
+    "16_postgres_state_store.py": (
+        conversations,
+        ["Replica A", "[BehaviorWeave:nudge]", "[BehaviorWeave:stop] Identical call blocked."],
+        lambda output: assert_count(output.split("Replica B")[1], "[BehaviorWeave:", 1),
+    ),
+    "17_redis_state_store.py": (
+        conversations,
+        ["Replica A", "[BehaviorWeave:nudge]", "[BehaviorWeave:stop] Identical call blocked."],
+        lambda output: assert_count(output.split("Replica B")[1], "[BehaviorWeave:", 1),
+    ),
+    "18_langgraph_store.py": (
+        calls(*[("get_alarm", MACHINE)] * 3),
+        [
+            "[BehaviorWeave:stop] Identical call blocked.",
+            "Behavior states in the LangGraph store under ('behaviorweave', 'example-18-",
+            "  repeated_tool_call: count=3",
+        ],
+        None,
+    ),
+    "19_agxai_opentelemetry.py": (
+        calls(*[("get_alarm", MACHINE)] * 3),
+        [
+            "audit: 'get_alarm' occurred 2 consecutive times (tool.execution)",
+            "span: tool.execution",
+            "span: execution.completed",
+            "Answer:\nDone.",
+        ],
+        None,
+    ),
+}
+
+# Examples that need a running service, keyed to the variable holding its URL.
+SERVICES = {
+    "16_postgres_state_store.py": "BEHAVIORWEAVE_POSTGRES_URL",
+    "17_redis_state_store.py": "BEHAVIORWEAVE_REDIS_URL",
+    "18_langgraph_store.py": "BEHAVIORWEAVE_POSTGRES_URL",
 }
 
 
@@ -277,7 +322,10 @@ def test_examples_run_offline(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+    if (variable := SERVICES.get(name)) and not os.environ.get(variable):
+        pytest.skip(f"set {variable} to run {name}")
     respond, expected, check = EXAMPLE_RUNS[name]
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     monkeypatch.setattr(common, "create_model", lambda: RuleModel(respond=respond))
     monkeypatch.setenv("BEHAVIORWEAVE_CONCURRENCY_CALLS", "3")
     monkeypatch.delenv("BEHAVIORWEAVE_MCP_URL", raising=False)
@@ -292,14 +340,24 @@ def test_examples_run_offline(
         check(output)
 
 
+SUPPORT_MODULES = {
+    "common.py",
+    "local_alarm_mcp.py",
+    "postgres_state_store.py",
+    "redis_state_store.py",
+}
+
+
 def test_every_example_is_covered() -> None:
     scripts = {path.name for path in EXAMPLES.glob("*.py")}
-    assert scripts == {*EXAMPLE_RUNS, "common.py", "local_alarm_mcp.py"}
+    assert scripts == {*EXAMPLE_RUNS, *SUPPORT_MODULES}
 
 
 @pytest.mark.live
 @pytest.mark.parametrize("name", sorted(EXAMPLE_RUNS))
 def test_examples_run_against_a_live_model(name: str) -> None:
+    if (variable := SERVICES.get(name)) and not os.environ.get(variable):
+        pytest.skip(f"set {variable} to run {name}")
     configured = all(
         os.environ.get(variable) for variable in ("OPENAI_API_KEY", "BEHAVIORWEAVE_MODEL")
     )

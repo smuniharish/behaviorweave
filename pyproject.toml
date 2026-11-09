@@ -1,17 +1,21 @@
 [build-system]
-requires = ["hatchling>=1.32.4", "hatch-fancy-pypi-readme>=25.1.0"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"
 
 [project]
 name = "behaviorweave"
-dynamic = ["version", "readme"]
+version = "1.1.0"
 description = "Deterministic behavioral policies and interventions for LangGraph and LangChain agents."
+readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "S Muni Harish" }]
+authors = [
+  { name = "S MUNI HARISH", email = "samamuniharish@gmail.com" },
+]
 keywords = [
   "agents",
+  "agxai",
   "ai-safety",
   "guardrails",
   "intervention",
@@ -21,6 +25,7 @@ keywords = [
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
+  "Framework :: AsyncIO",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -28,101 +33,70 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
 dependencies = [
-  "langchain>=1.4.3,<2",
-  "langchain-core>=1.6.6,<2",
-  "langgraph>=1.2.12,<2",
-  "langgraph-xai>=1.0.0,<2",
+  "agxai[langgraph]>=1.0.2,<2",
+  "langchain>=1.4.9,<2",
+  "langchain-core>=1.7.6,<2",
+  "langgraph>=1.2.20,<2",
 ]
 
 [project.urls]
 Homepage = "https://github.com/smuniharish/behaviorweave"
-Documentation = "https://behaviorweave.readthedocs.io/en/latest/"
-Repository = "https://github.com/smuniharish/behaviorweave"
-Issues = "https://github.com/smuniharish/behaviorweave/issues"
+Documentation = "https://behaviorweave.readthedocs.io/"
 Changelog = "https://github.com/smuniharish/behaviorweave/blob/master/CHANGELOG.md"
+Issues = "https://github.com/smuniharish/behaviorweave/issues"
+Repository = "https://github.com/smuniharish/behaviorweave"
 
 [dependency-groups]
 test = [
-  "hypothesis>=6.168.3",
-  "langchain[mcp]>=1.4.3",
-  "mcp>=2.3.0",
-  "pytest>=9.1.1",
-  "pytest-asyncio>=1.4.0",
+  "agxai[otel]>=1.0.2,<2",
+  "hypothesis>=6.170.15",
+  "langchain[mcp]>=1.4.9,<2",
+  "mcp>=2.3.0,<3",
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.4.1.post1",
   "pytest-cov>=7.1.0",
-  "skills-ref>=0.1.1",
+  "skills-ref>=0.1.1,<1",
 ]
-lint = ["ruff>=0.16.10"]
-types = ["pyrefly>=1.3.2"]
+lint = ["ruff>=0.17.4"]
+types = ["pyrefly>=1.4.1"]
 docs = [
-  "mkdocs>=1.6.1,<2",
-  "mkdocs-glightbox>=0.5.2,<1",
-  "mkdocs-material>=9.7.7,<10",
-  "mkdocstrings>=1.0.6,<2",
-  "mkdocstrings-python>=2.0.9,<3",
-]
-examples = [
-  "deepagents>=0.7.21",
-  "langchain[mcp]>=1.4.3",
-  "langchain-openai>=1.6.7",
-  "langgraph-swarm>=0.1.0",
-  "mcp>=2.3.0",
+  "mkdocstrings-python>=2.0.10,<3",
+  "zensical>=0.1.0,<0.2",
 ]
 dev = [
   { include-group = "test" },
   { include-group = "lint" },
   { include-group = "types" },
 ]
+examples = [
+  "agxai[otel]>=1.0.2,<2",
+  "deepagents>=0.7.34,<1",
+  "langchain[mcp]>=1.4.9,<2",
+  "langchain-openai>=1.7.4,<2",
+  "langgraph-checkpoint-postgres>=3.2.0,<4",
+  "langgraph-swarm>=0.1.0,<1",
+  "mcp>=2.3.0,<3",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2,<2",
+  "psycopg[binary,pool]>=3.3.8,<4",
+  "psycopg-pool>=3.3.3,<4",
+  "redis>=8.1.0,<9",
+]
 
 [tool.uv]
 default-groups = ["dev"]
 
-[tool.hatch.version]
-path = "src/behaviorweave/__init__.py"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/behaviorweave"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-  "/src",
-  "/tests",
-  "/examples",
-  "/docs",
-  "/scripts",
-  "/behaviorweave-skills",
-  "/mkdocs.yml",
-  "/README.md",
-  "/CHANGELOG.md",
-  "/CODE_OF_CONDUCT.md",
-  "/CONTRIBUTING.md",
-  "/SECURITY.md",
-  "/LICENSE",
+[tool.uv.build-backend]
+source-include = [
+  "tests/**", "examples/**", "docs/**", "diagrams/**", "scripts/**",
+  "behaviorweave-skills/**", "zensical.toml", "skills.sh.json", "uv.lock",
+  "CHANGELOG.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md",
 ]
-exclude = ["__pycache__", "*.pyc"]
-
-[tool.hatch.metadata.hooks.fancy-pypi-readme]
-content-type = "text/markdown"
-
-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
-path = "README.md"
-
-# PyPI cannot resolve repository-relative paths: point images at raw files and links at GitHub.
-[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
-pattern = '(!\[[^\]]*\]\()(?!https?://)([^)\s]+)\)'
-replacement = '\1https://raw.githubusercontent.com/smuniharish/behaviorweave/master/\2)'
-
-[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
-pattern = 'src="(?!https?://)([^"]+)"'
-replacement = 'src="https://raw.githubusercontent.com/smuniharish/behaviorweave/master/\1"'
-
-[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
-pattern = '(\[[^\]]*\]\()(?!https?://|#|mailto:)([^)\s]+)\)'
-replacement = '\1https://github.com/smuniharish/behaviorweave/blob/master/\2)'
 
 [tool.ruff]
 line-length = 100
@@ -179,11 +153,18 @@ convention = "google"
 "behaviorweave-skills/**" = ["ARG", "D103", "S101", "T20", "TC"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["behaviorweave", "common", "support"]
+known-first-party = [
+  "behaviorweave",
+  "common",
+  "postgres_state_store",
+  "redis_state_store",
+  "support",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--strict-config"]
+# langsmith (a LangChain dependency) registers a pytest plugin this suite does not use.
+addopts = ["-ra", "--strict-markers", "--strict-config", "-p", "no:langsmith_plugin"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
@@ -194,6 +175,10 @@ markers = [
 filterwarnings = [
   "error",
   "ignore::langchain_core._api.beta_decorator.LangChainBetaWarning",
+  # langsmith 0.14.17 emits an import-time warning on Python 3.14+.
+  "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:langsmith",
+  # MCP's key_value dependency triggers a runtime annotation warning on Python 3.15.
+  "ignore:.*key_value.*isn't explicitly decorated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
@@ -219,8 +204,7 @@ project-includes = [
 ]
 search-path = ["src", "examples", "tests"]
 
-# LangGraph bounds StateGraph's state type with protocols that pyrefly does not yet match
-# against TypedDict classes; the package itself never specializes StateGraph.
+# Pyrefly does not yet match LangGraph's StateGraph bound against TypedDict classes.
 [[tool.pyrefly.sub-config]]
 matches = "examples/**"
 errors = { bad-specialization = false }

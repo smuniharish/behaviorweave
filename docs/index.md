@@ -24,7 +24,7 @@ applies.
     ---
 
     One line of middleware guards every tool call of a LangChain agent. Adapters cover
-    LangGraph nodes, multi-agent handoffs, MCP servers, and langgraph-xai provenance.
+    LangGraph nodes, multi-agent handoffs, MCP servers, and agxai provenance.
 
 -   :material-shield-lock-outline: **Correct under pressure**
 
@@ -65,7 +65,7 @@ engine = BehaviorEngine(
 )
 
 for _ in range(3):
-    decision = engine.process(
+    decision = await engine.process(
         BehaviorEvent.tool_call(
             "get_alarm", {"machine": "ETCH-3"}, scope="incident-42"
         )
@@ -90,8 +90,8 @@ print(decision.intervention.reason)  # 'get_alarm' occurred 3 consecutive times
 
 ## Where to next
 
-- [Quickstart](quickstart.md): install BehaviorWeave and guard an agent in five minutes.
-- [Concepts](events.md): events, patterns, policies, and state.
+- [Quickstart](getting-started/quickstart.md): install BehaviorWeave and guard an agent in five minutes.
+- [Concepts](guide/concepts/events.md): events, patterns, policies, and state.
 - [LangChain middleware](integrations/langchain.md): guard any `create_agent` agent.
-- [Live examples](examples.md): fifteen runnable, provider-backed scenarios.
-- [API reference](api-reference.md): every public class and function.
+- [Live examples](examples/index.md): fifteen runnable, provider-backed scenarios.
+- [API reference](api/index.md): every public class and function.
