@@ -4,7 +4,7 @@ description: "Implement, test, and review custom BehaviorWeave storage backends,
 license: Apache-2.0
 compatibility: Python 3.12 through 3.15 with behaviorweave 1.1.x. Contract tests need no pytest-specific API.
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   documentation: "https://behaviorweave.readthedocs.io"
 ---
 

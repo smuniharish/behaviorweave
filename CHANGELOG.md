@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1]
+
+- Simplify internal-flow diagrams while preserving documented integration and policy contracts.
+- Document optional upstream Agent Skills and correct the security and examples guides.
+- Refresh the dependency lock and documentation build requirements.
+- Remove automated release publishing; releases remain maintainer-controlled.
+
 ## [1.1.0]
 
 - Async engine processing, storage, patterns, audit sinks, and lifecycle.

@@ -66,6 +66,11 @@ Set `HYPOTHESIS_PROFILE=ci` to run the property-based tests with more examples, 
   images, and `diagrams/manifest.json`.
 - Document every public symbol with a Google-style docstring; the API reference is generated
   from them. Keep internal helpers underscored so they stay out of the reference.
+- Explain public behavior, interfaces, integration boundaries, security guarantees, and
+  operational limitations. Prefer conceptual diagrams over unnecessary internal blueprints.
+- Flag potentially sensitive engineering details for maintainer review; do not remove
+  information needed to configure, extend, or troubleshoot the package. Documentation
+  changes do not conceal details already present in public source or Git history.
 
 ## Agent Skill
 
@@ -87,10 +92,3 @@ When public API or documented behavior changes, update the skill and follow
 
 Keep pull requests focused, describe the behavior change and how it is tested, and add an
 entry to `CHANGELOG.md` for user-visible changes.
-
-## Releases
-
-Releases are published to PyPI by the `Release` workflow when a GitHub release is published.
-The release tag must be `v` followed by `uv version --short` from `pyproject.toml`, and
-the `CHANGELOG.md` entry for that version must be complete. Publishing uses PyPI trusted
-publishing, so no API token is stored in the repository.

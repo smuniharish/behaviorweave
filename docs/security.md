@@ -11,7 +11,7 @@ keeps is minimal, bounded, and free of model reasoning.
 | Counts and timestamps | Pattern state | Current count, run start, last event time. |
 | Recent event IDs and decisions | Pattern state | The 256 most recent IDs per history and the decisions emitted for them, for idempotency. |
 | Fired policies and cooldowns | Pattern state | Policy IDs and cooldown expiry times. |
-| Halted scopes | `BehaviorWeaveMiddleware` memory | Scopes halted by an outcome decision, until released. |
+| Halted scopes | Engine state store | Scopes halted by an outcome decision, until released or expired. |
 
 Events themselves are not stored. If you configure an `audit_sink`, the records it receives
 contain the full event, including its metadata, and their retention is up to you.

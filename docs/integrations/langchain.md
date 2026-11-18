@@ -8,7 +8,7 @@ monkey-patches LangChain.
 [`BehaviorWeaveMiddleware`](../api/index.md#behaviorweave.integrations.langchain.BehaviorWeaveMiddleware) is
 a LangChain agent middleware that guards every tool call of a `create_agent` agent:
 
-![Sequence of a guarded tool call](../assets/diagrams/guarded-tool-call.png)
+![A guarded tool call can be blocked or allowed to run](../assets/diagrams/guarded-tool-call.png)
 
 1. Before the tool runs, it reports a `tool_call` event and evaluates your policies.
 2. If the decision's kind is in `block_on` (`stop` and `pause` by default), or the scope is

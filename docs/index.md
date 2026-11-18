@@ -93,5 +93,5 @@ print(decision.intervention.reason)  # 'get_alarm' occurred 3 consecutive times
 - [Quickstart](getting-started/quickstart.md): install BehaviorWeave and guard an agent in five minutes.
 - [Concepts](guide/concepts/events.md): events, patterns, policies, and state.
 - [LangChain middleware](integrations/langchain.md): guard any `create_agent` agent.
-- [Live examples](examples/index.md): fifteen runnable, provider-backed scenarios.
+- [Examples](examples/index.md): twenty runnable integration and policy scenarios.
 - [API reference](api/index.md): every public class and function.
