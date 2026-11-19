@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add live PyPI download statistics to the README and documentation home.
+
 ## [1.1.1]
 
 - Simplify internal-flow diagrams while preserving documented integration and policy contracts.
